@@ -1,0 +1,273 @@
+# AGENT_CONTEXT — @brandos/governance-layer
+
+**Layer:** L4 — Governed Execution  
+**Maturity:** L5 (Autonomous Ecosystem)  
+**Build order position:** 10 of 16 (peer with iskill-runtime)
+
+> Self-describing · Self-validating · Multi-agent safe · Zero shadow files
+
+---
+
+## Package Purpose
+
+Semantic governance authority for BrandOS artifact generation. Validates, scores, and optionally repairs compiled `ArtifactV2` artifacts. Enforces brand quality rules and semantic coherence across all task types.
+
+---
+
+## Two Independent Governance Paths
+
+These paths serve different callers and **MUST NOT be conflated**:
+
+| Path | Function | Caller | When |
+|---|---|---|---|
+| Text scoring | `evaluateGovernance()` | `control-plane-layer` | After every generation, for ALL task types |
+| Semantic validation | `validateXxxArtifact()` + `runXxxSemanticGovernance()` | `artifact-engine-layer` | For structured artifact types (carousel, deck, report) |
+
+---
+
+## Responsibilities
+
+| Capability Key | Function | Type |
+|---|---|---|
+| `governance.validate.carousel` | `validateCarouselArtifact()` | Pure validator |
+| `governance.validate.deck` | `validateDeckArtifact()` | Pure validator |
+| `governance.validate.report` | `validateReportArtifact()` | Pure validator |
+| `governance.score.text` | `evaluateGovernance()` | Pure scorer |
+| `governance.repair.carousel` | `runCarouselSemanticGovernance()` | LLM-injected repair |
+| `governance.repair.deck` | `runDeckSemanticGovernance()` | LLM-injected repair |
+| `governance.repair.report` | `runReportSemanticGovernance()` | LLM-injected repair |
+
+---
+
+## Non-Responsibilities
+
+- LLM calls (LLM is injected as a callback — never imported directly)
+- Persistence or telemetry
+- Routing or provider selection
+- Artifact compilation (that's OCL)
+- Policy threshold definition (that's governance-config)
+
+---
+
+## Public Contracts
+
+Single entry point: `src/index.ts`. **No subpath imports.**
+
+```typescript
+import {
+  // Text governance
+  evaluateGovernance,
+  registerPolicyViolationHandler,
+
+  // Carousel governance
+  validateCarouselArtifact,
+  runCarouselSemanticGovernance,
+
+  // Deck governance
+  validateDeckArtifact,
+  runDeckSemanticGovernance,
+
+  // Report governance
+  validateReportArtifact,
+  runReportSemanticGovernance,
+
+  // Plugin registry
+  GovernancePluginRegistry,
+  bootstrapGovernancePlugins,
+} from '@brandos/governance-layer'
+
+import type {
+  SemanticGovernanceResult,
+  GovernanceResult,
+  GovernanceEvaluationInput,
+  GovernanceEvaluationResult,
+  GovernanceContext,
+  PolicyViolationType,
+  SemanticValidationOutcome,
+  GovernedArtifactType,
+  SemanticValidator,
+  SemanticScorer,
+  SemanticRepair,
+  SemanticRepairResult,
+  GovernanceValidatorPlugin,
+  GovernanceScorerPlugin,
+  GovernanceRepairPlugin,
+  PackageHealthReport,
+  GovernanceCapabilityKey,
+} from '@brandos/governance-layer'
+```
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | `CarouselArtifact`, `DeckArtifact`, `ReportArtifact`, `IGovernanceFeedback`, `IAttemptHistory` |
+| `@brandos/governance-config` | All policy thresholds, penalties, unsafe content patterns, platform hard constraints |
+
+### Forbidden Imports (ENFORCED)
+
+```
+@brandos/ai-runtime-layer      — governance NEVER calls LLM directly; LLM is injected
+@brandos/control-plane-layer   — governance is consumed BY CPL, not the reverse
+@brandos/artifact-engine-layer — governance is consumed BY engine, not the reverse
+@brandos/output-control-layer  — RULE-5 (Fix C2): repairJSON/extractJSON now in shared-utils
+@brandos/shared-utils          — removed in L5 migration; repairJSON/extractJSON no longer needed here
+@supabase/supabase-js          — no persistence in governance-layer
+react, next                    — server-side only package
+```
+
+---
+
+## Consumers
+
+| Consumer | What they use |
+|---|---|
+| `@brandos/control-plane-layer` | `evaluateGovernance()` — text scoring after every generation |
+| `@brandos/artifact-engine-layer` | `validateXxxArtifact()`, `runXxxSemanticGovernance()` — structured validation |
+| `@brandos/iskill-runtime` | Governance bridge for skill output validation |
+
+---
+
+## Internal Architecture
+
+```
+src/
+  index.ts                    ← SINGLE CANONICAL ENTRY POINT
+  governanceEngine.ts         ← evaluateGovernance() + text scoring
+  GovernancePluginRegistry.ts ← plugin registration + bootstrapGovernancePlugins()
+  contracts.ts                ← internal governance type contracts
+  carousel/
+    index.ts                  ← re-exports validateCarouselArtifact + runCarouselSemanticGovernance
+    validator.ts              ← pure carousel semantic validator
+  deck/
+    index.ts
+    validator.ts              ← pure deck semantic validator
+  report/
+    index.ts
+    validator.ts              ← pure report semantic validator
+__tests__/
+  boundary/
+    dependencyBoundary.test.ts      ← enforces forbidden import rules
+  contract/
+    contractCompliance.test.ts      ← verifies public API surface
+  integration/
+    governancePipeline.test.ts      ← full governance pipeline
+  regression/
+    knownFailurePaths.test.ts       ← edge cases and failure scenarios
+  unit/
+    carouselValidator.test.ts
+    deckValidator.test.ts
+    reportValidator.test.ts
+    governanceEngine.test.ts
+    pluginRegistry.test.ts
+```
+
+**No root-level `index.ts` shadow file.** FIX-2 eliminated the root shadow file. Only `src/index.ts` is the entry point.
+
+### Text governance data flow
+
+```
+CPL calls evaluateGovernance(content, taskType, context)
+  │
+  ├─ content analysis: clichés, buzzwords, em-dashes, hooks, robotic symmetry
+  ├─ fix pass: auto-removes detectable issues
+  └─→ GovernanceEvaluationResult { passed, score, approved_output, fixes_applied, flags_remaining }
+```
+
+### Semantic governance data flow (structured artifacts)
+
+```
+artifact-engine-layer calls validateCarouselArtifact(artifact)
+  → pure, synchronous, deterministic
+  → SemanticValidationOutcome { valid, violations, score }
+
+artifact-engine-layer calls runCarouselSemanticGovernance(artifact, topic, callLLM)
+  → validateCarouselArtifact(current) → passes? return result
+  → loop (up to maxRepairAttempts = 2):
+       callLLM(buildRepairPrompt(failure)) → parse JSON → re-validate
+  → GovernanceResult { success, artifact, repaired, attempts }
+```
+
+---
+
+## Invariants
+
+**I-1 — Validators are pure.** `validateXxxArtifact()` functions have no I/O, no LLM calls, no side effects. They are deterministic. Given the same artifact, they must always return the same result.
+
+**I-2 — LLM is injected.** Repair functions accept `callLLM: (prompt: string) => Promise<string>`. LLM SDK is NEVER imported directly.
+
+**I-3 — Scorers return [0, 100].** All scorer functions return a number in the 0–100 range.
+
+**I-4 — Two governance paths are distinct.** Text scoring (`evaluateGovernance`) and semantic validation (`validateXxxArtifact`) test different properties. Do not conflate them. Do not call semantic validators from `evaluateGovernance`.
+
+**I-5 — Plugin registry for extension.** New artifact types register via `GovernancePluginRegistry.registerValidator()`. Do NOT modify existing validators.
+
+**I-6 — All thresholds from governance-config.** No numeric threshold is hardcoded in this package. All values are imported from `@brandos/governance-config`.
+
+**I-7 — Single entry point.** `src/index.ts` is the only valid import path. No subpath imports are permitted. No consumer may import from `src/carousel/validator.ts` or any other internal path.
+
+**I-8 — OCL runs before governance.** Governance receives compiled `ArtifactV2`, never raw LLM strings. This is enforced at the caller level (artifact-engine-layer's `assertCompiledArtifact()`), but this package must never accept raw strings in its validator functions.
+
+---
+
+## Safe Changes
+
+- Adding new violation checks to existing validators (additive only)
+- Improving repair prompts in `runXxxSemanticGovernance()`
+- Adding new plugins via `GovernancePluginRegistry.registerValidator()`
+- Bug fixes to scoring logic
+
+---
+
+## Dangerous Changes
+
+- Changing `validateCarouselArtifact()` output shape (breaks artifact-engine-layer consumers)
+- Changing `evaluateGovernance()` output shape (breaks CPL consumers)
+- Changing `GovernanceEvaluationResult.score` semantics
+- Adding `@brandos/*` imports beyond contracts and governance-config
+- Removing existing plugin registry methods
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest  
+**Location:** `__tests__/`
+
+Required coverage:
+- `boundary/dependencyBoundary.test.ts` — verify no imports from forbidden packages
+- `contract/contractCompliance.test.ts` — verify all public API methods are present
+- `unit/carouselValidator.test.ts` — all carousel validation rules, pass and fail cases
+- `unit/deckValidator.test.ts` — all deck validation rules
+- `unit/reportValidator.test.ts` — all report validation rules
+- `unit/governanceEngine.test.ts` — evaluateGovernance() across task types, score ranges
+- `integration/governancePipeline.test.ts` — validate → repair → re-validate loop
+- `regression/knownFailurePaths.test.ts` — edge cases: empty slides, null fields, malformed data
+
+---
+
+## Known Technical Debt
+
+- `runXxxSemanticGovernance()` max repair attempts is currently 2. No tracking of attempt cost. Future: cost-aware repair budget.
+
+---
+
+## Current Migration Status
+
+### Fix C2 / L5 Migration (Complete)
+`@brandos/shared-utils` dependency removed. `repairJSON` and `extractJSON` are no longer needed in this package — JSON repair is handled upstream in OCL before governance sees the artifact.
+
+---
+
+## Agent Instructions
+
+Before modifying this package:
+
+1. Read this file entirely.
+2. Read `src/index.ts` to understand the current public API surface.
+3. For validator changes: run the full validator unit test suite first to understand current behavior.
+4. For new artifact types: use `GovernancePluginRegistry.registerValidator()` — do NOT touch `carousel/validator.ts`, `deck/validator.ts`, or `report/validator.ts`.
+5. Never add numeric thresholds inline — put them in `@brandos/governance-config`.
+6. After changes, run `pnpm test` and `node scripts/check-boundaries.mjs`.

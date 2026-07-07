@@ -1,0 +1,178 @@
+# AGENT_CONTEXT — @brandos/runtime-config
+
+**Layer:** L3a — Configuration Schema  
+**Maturity:** L4 (Wave C upgrade complete)  
+**Build order position:** 4 of 16 (peer with governance-config, artifact-config, ui-admin)
+
+---
+
+## Package Purpose
+
+Single source of truth for AI **runtime** configuration. Owns provider settings, runtime mode, resilience parameters, and the bridge that converts persisted admin settings (from Supabase via CPL's AdminSettingsService) into the format consumed by `@brandos/ai-runtime-layer`.
+
+This package owns **how providers are configured** — not what they generate, not how generation is governed.
+
+---
+
+## Responsibilities
+
+| Domain | Owner |
+|---|---|
+| `runtime.provider.*` | This package (`ProviderSettingsSchema`) |
+| `runtime.mode` | This package (`RuntimeConfigSchema.runtimeMode`) |
+| `runtime.resilience.*` | This package (retry, circuit breaker, timeouts) |
+| `runtime.flags.*` | This package (streaming, telemetry, fallback flags) |
+| Governance / policy rules | `@brandos/governance-config` — NOT this package |
+| Artifact type settings | `@brandos/contracts` / `artifact-engine-layer` — NOT this package |
+| Telemetry aggregation | Planned `@brandos/telemetry-store` — NOT this package |
+| Auth / session | `@brandos/auth` — NOT this package |
+
+---
+
+## Public Contracts
+
+The only file consumers should import from is `src/index.ts` via `@brandos/runtime-config`.
+
+### Stable exports
+
+| Export | Consumed by | Notes |
+|---|---|---|
+| `RuntimeConfigSchema` | `control-plane-layer` | Zod schema — do not remove fields |
+| `RuntimeConfig` | `control-plane-layer`, `apps/web` | Type only |
+| `ProviderSettingsSchema` | `control-plane-layer` | Zod schema |
+| `ProviderSettings` | `control-plane-layer`, `apps/web` | Type only |
+| `DEFAULT_PROVIDERS` | `control-plane-layer` | Initial provider list |
+| `mergeProviders` | `control-plane-layer` | Deep-merge by ID |
+| `mergeRuntimeConfig` | `control-plane-layer` | May be called dynamically |
+| `toAIRuntimeConfig` | `control-plane-layer` | Bridge: RuntimeConfig → AIRuntimeConfig |
+| `DEFAULT_RUNTIME_CONFIG` | `control-plane-layer` | Fallback default |
+| `IRuntimeConfigService` | `control-plane-layer` | Planned implementation target |
+
+### L4 exports (Wave C)
+
+| Export | Purpose |
+|---|---|
+| `RuntimeCapabilityRegistry` | Query which capabilities this package owns |
+| `runtimeCapabilityRegistry` | Singleton instance |
+| `RuntimeCapabilityKey` | Union type of all owned capability keys |
+| `validatePackage` | Returns `PackageHealthReport` — use in CI |
+| `PackageHealthReport` | Health report type |
+| `PACKAGE_METADATA` | Machine-readable package descriptor |
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | `AIRuntimeConfig`, `ProviderName`, `RuntimeMode`, other shared types |
+| `zod` | Schema validation |
+
+No other `@brandos/*` packages.
+
+---
+
+## Consumers
+
+| Consumer | What they use |
+|---|---|
+| `@brandos/ai-runtime-layer` | `toAIRuntimeConfig()`, `ProviderSettings`, `RuntimeConfig` |
+| `@brandos/control-plane-layer` | All exports above (primary consumer) |
+| `apps/web` | `ProviderSettings`, `RuntimeConfig` type (for admin UI) |
+
+---
+
+## Internal Architecture
+
+```
+src/
+  index.ts                    ← PUBLIC API
+  IPackage.ts                 ← machine-readable package metadata
+  RuntimeCapabilityRegistry.ts ← L4: queryable capability map
+  validatePackage.ts          ← L4: self-check returning PackageHealthReport
+  __tests__/
+    validatePackage.test.ts
+```
+
+### Key schemas
+
+```typescript
+// Provider settings — one entry per configured provider
+ProviderSettingsSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+  apiKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  // ...resilience, model overrides
+})
+
+// Full runtime config
+RuntimeConfigSchema = z.object({
+  runtimeMode: RuntimeModeSchema,
+  providers: z.array(ProviderSettingsSchema),
+  resilience: ResilienceConfigSchema,
+  flags: RuntimeFlagsSchema,
+})
+```
+
+---
+
+## Invariants
+
+**I-1 — No imports from peer config packages.** Do not import from `@brandos/governance-config` or `@brandos/artifact-config`.
+
+**I-2 — `toAIRuntimeConfig()` is the single bridge.** This function is the only mechanism for converting admin-persisted `RuntimeConfig` into the `AIRuntimeConfig` shape consumed by ai-runtime-layer. Do not create alternative bridges.
+
+**I-3 — Schema fields are additive only.** Never remove or rename fields from `RuntimeConfigSchema` or `ProviderSettingsSchema` without confirming no Supabase-persisted records use them.
+
+**I-4 — `DEFAULT_PROVIDERS` is the fallback.** When no admin config exists, ai-runtime-layer falls back to env-var detection. `DEFAULT_PROVIDERS` provides the initial persisted structure.
+
+---
+
+## Safe Changes
+
+- Adding new optional fields to `RuntimeConfigSchema` or `ProviderSettingsSchema`
+- Adding new `RuntimeCapabilityKey` values
+- Adding new utility functions to `src/index.ts`
+- Bug fixes to `mergeProviders` or `mergeRuntimeConfig`
+
+---
+
+## Dangerous Changes
+
+- Removing or renaming schema fields (breaks persisted admin configs in Supabase)
+- Changing `toAIRuntimeConfig()` output shape (breaks ai-runtime-layer initialization)
+- Removing `DEFAULT_PROVIDERS` (breaks CPL init when no DB config exists)
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest  
+**Location:** `src/__tests__/validatePackage.test.ts`
+
+Required coverage:
+- `validatePackage()` returns healthy report, never throws
+- `RuntimeCapabilityRegistry` reports correct capabilities
+- Schema parsing: valid configs parse, invalid configs are rejected with correct errors
+- `toAIRuntimeConfig()` bridge: round-trips ProviderSettings correctly
+
+---
+
+## Known Technical Debt
+
+- `IRuntimeConfigService` — declared as a planned implementation target. No concrete implementation. **UNKNOWN whether any future CPL subpackage will implement this — requires maintainer confirmation.**
+- `mergeRuntimeConfig` and `toAIRuntimeConfig` have zero cross-package refs at last audit. Kept per the documented reasoning (dynamic import / broken bridge detection). Should be audited again post-CPL extraction.
+
+---
+
+## Agent Instructions
+
+Before modifying this package:
+
+1. Read this file.
+2. Read `src/IPackage.ts` for machine-readable metadata.
+3. Confirm your change does not remove or rename any Zod schema field.
+4. Run `pnpm test` in this package after changes.
+5. If changing the `toAIRuntimeConfig()` bridge, test manually against `ai-runtime-layer` startup.

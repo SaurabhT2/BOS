@@ -1,0 +1,39 @@
+{
+  "name": "@brandos/ai-runtime-layer",
+  "version": "1.0.0",
+  "description": "AI Runtime \u2014 llmRouter, provider adapters, execution engine, scoring",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./generationModes": {
+      "types": "./dist/generationModes.d.ts",
+      "default": "./dist/generationModes.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brandos/contracts": "workspace:*",
+    "@brandos/shared-utils": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^1.0.0",
+    "rimraf": "^5.0.0"
+  }
+}

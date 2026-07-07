@@ -1,0 +1,260 @@
+# AGENT_CONTEXT — apps/web
+
+**Layer:** L9 — Application
+**Maturity:** Next.js 15 App Router, production
+**Build order position:** 16 of 16
+**Last updated:** Cleanup Sprint 2 — BI isolation enforced; PLAuthBridge introduced; auth re-export chain fixed
+
+---
+
+## Package Purpose
+
+The deployed BrandOS web application. Integration surface for the entire monorepo. All business logic lives in `@brandos/control-plane-layer` and downstream packages — `apps/web` contains only thin routing, authentication glue, and UI composition.
+
+---
+
+## Cleanup Sprint 2 Changes
+
+### 1. apps/web no longer imports @brandos/brand-intelligence directly
+
+All four direct BI import sites replaced with CPL proxy functions:
+
+| File | Was | Now |
+|---|---|---|
+| `app/api/control-plane/brand-memory/route.ts` | `getGlobalBrandIntelligenceRuntime()` × 3 | `getBrandMemory`, `recordBrandMemoryObservation`, `reviewBrandMemorySignal` from CPL |
+| `app/api/memory/route.ts` | `getGlobalBrandIntelligenceRuntime().getBrandSummary()` | `getBrandSummary` from CPL |
+| `lib/agents/plannerAgent.ts` | `getGlobalBrandIntelligenceRuntime().resolve()` | `resolveBrandCognitionContext` from CPL |
+| `lib/agents/transformAgent.ts` | `getGlobalBrandIntelligenceRuntime().resolve()` | `resolveBrandCognitionContext` from CPL |
+
+### 2. Auth import chain fixed
+
+`lib/auth.ts` previously imported from `@brandos/presentation-layer` (which re-exported from `@brandos/auth`). The intermediate PL hop is removed:
+
+```typescript
+// ❌ BEFORE
+export { authService, getSupabaseClient, getSupabaseAdmin, supabase } from '@brandos/presentation-layer'
+
+// ✅ AFTER
+export { authService, getSupabaseClient, getSupabaseAdmin, supabase } from '@brandos/auth'
+```
+
+### 3. PLAuthBridge introduced
+
+`lib/pl-auth-bridge.tsx` (new file) bridges `useAuth()` from `@brandos/auth` into `PLAuthProvider` from `@brandos/presentation-layer`. Root layout (`app/layout.tsx`) wraps children in `<PLAuthBridge>` inside `<AuthProvider>`.
+
+```typescript
+// app/layout.tsx
+import { AuthProvider } from '@brandos/auth'
+import { PLAuthBridge } from '@/lib/pl-auth-bridge'
+
+export default function RootLayout({ children }) {
+  return (
+    <AuthProvider>
+      <PLAuthBridge>   {/* connects useAuth() → PLAuthContext for PL shells */}
+        {children}
+      </PLAuthBridge>
+    </AuthProvider>
+  )
+}
+```
+
+### 4. persona/route.ts simplified
+
+Removed the BI `personaService` probe (`biRuntime.personaService?.handleAction`) — this check always failed in practice as `BrandIntelligenceRuntime` never exposed `personaService`. Route now calls `@brandos/auth` directly for persona operations (`setDefaultPersona`, `deletePersona`, `updatePersona`).
+
+---
+
+## Responsibilities
+
+| Concern | Location |
+|---|---|
+| API route: generation | `app/api/generate/route.ts` → `runControlPlane()` |
+| API route: artifact pipeline | `app/api/generate/artifact/route.ts` → `executeArtifactPipeline()` |
+| API routes: brand memory | `app/api/control-plane/brand-memory/route.ts` → CPL proxy functions |
+| API route: memory / brand profile | `app/api/memory/route.ts` → `getBrandSummary()` from CPL |
+| API route: persona CRUD | `app/api/persona/route.ts` → `@brandos/auth` directly |
+| API routes: admin settings | `app/api/admin/*/route.ts` → `AdminSettingsService` |
+| Startup instrumentation | `instrumentation.ts` → `initCPL()`, `bootstrapArtifactEngine()` |
+| Auth callback | `app/auth/callback/route.ts` |
+| PLAuthBridge | `lib/pl-auth-bridge.tsx` — bridges `@brandos/auth` → `PLAuthContext` |
+| Auth re-export shim | `lib/auth.ts` → imports from `@brandos/auth` directly |
+| Workspace pages | `app/(workspace)/` |
+| Admin pages | `app/(admin)/` |
+| Generation agents | `lib/agents/plannerAgent.ts`, `lib/agents/transformAgent.ts` |
+
+---
+
+## Critical Rules for apps/web Routes
+
+### Rule 1 — Thin routes
+Routes delegate immediately to package functions. No multi-step business logic in handlers.
+
+### Rule 2 — Generation routes call CPL only
+```typescript
+// ✅ CORRECT
+import { runControlPlane } from '@brandos/control-plane-layer'
+```
+
+### Rule 3 — BI access via CPL proxy only
+```typescript
+// ✅ CORRECT
+import { getBrandMemory, resolveBrandCognitionContext } from '@brandos/control-plane-layer'
+
+// ❌ FORBIDDEN — direct BI import in apps/web
+import { getGlobalBrandIntelligenceRuntime } from '@brandos/brand-intelligence'
+```
+
+### Rule 4 — Auth from @brandos/auth directly
+```typescript
+// ✅ CORRECT
+import { AuthProvider, useAuth } from '@brandos/auth'
+import type { AuthUser } from '@brandos/auth'
+
+// ❌ REMOVED — do not import auth from @brandos/presentation-layer
+import { AuthProvider } from '@brandos/presentation-layer'
+```
+
+### Rule 5 — Admin routes call `requireAdmin()`
+Every `/api/admin/*` route must call `requireAdmin()` as first line.
+
+### Rule 6 — Node.js runtime directive
+CPL-touching routes must export `const runtime = 'nodejs'`.
+
+---
+
+## Package Dependencies (what apps/web imports from)
+
+| Package | Used for |
+|---|---|
+| `@brandos/contracts` | `ArtifactV2`, `TaskType`, `OverrideMode`, `ActivityEntry`, auth types |
+| `@brandos/auth` | `AuthProvider`, `useAuth`, all DB operations, auth types — **imported directly** |
+| `@brandos/runtime-config` | `ProviderSettings`, `RuntimeConfig` (admin UI forms) |
+| `@brandos/governance-config` | `PolicyConfig` (admin UI forms) |
+| `@brandos/artifact-config` | `ARTIFACT_TYPE_IDS`, `ARTIFACT_TYPE_REGISTRY` |
+| `@brandos/ui-admin` | Admin page primitives |
+| `@brandos/ai-runtime-layer` | `getAvailableModels`, `engineLabel` (via `initCPL()` wiring) |
+| `@brandos/control-plane-layer` | `runControlPlane`, `executeArtifactPipeline`, `initCPL`, `AdminSettingsService`, **all 5 CPL proxy functions** |
+| `@brandos/artifact-engine-layer` | `bootstrapArtifactEngine` (in `instrumentation.ts` only) |
+| `@brandos/presentation-layer` | Renderers, shells, `GenerationProgressDisplay`, `PLAuthProvider` |
+| `@brandos/brand-intelligence` | **FORBIDDEN** — use CPL proxy functions |
+
+---
+
+## Internal Architecture
+
+```
+app/
+  layout.tsx                               ← AuthProvider + PLAuthBridge wrap
+  (workspace)/workspace/
+    page.tsx, studio/page.tsx, memory/page.tsx, assets/page.tsx
+  (admin)/admin/
+    page.tsx, providers/page.tsx, governance/page.tsx, artifacts/page.tsx
+  api/
+    generate/
+      route.ts                             ← → runControlPlane()
+      artifact/route.ts                    ← → executeArtifactPipeline()
+    control-plane/
+      brand-memory/route.ts                ← → getBrandMemory, recordBrandMemoryObservation, reviewBrandMemorySignal
+    memory/route.ts                        ← → getBrandSummary() from CPL
+    persona/route.ts                       ← → @brandos/auth (setDefaultPersona, deletePersona, updatePersona)
+    admin/
+      providers/route.ts, governance/route.ts, artifacts/route.ts, health/route.ts
+    campaign/, feedback/
+    auth/callback/route.ts
+lib/
+  auth.ts                                  ← shim: re-exports from @brandos/auth directly
+  pl-auth-bridge.tsx                       ← NEW: bridges useAuth() → PLAuthProvider
+  supabase-server.ts
+  auth-guard.ts                            ← requireUser(), requireAdmin()
+  server-analytics.ts                      ← @deprecated PostHog stubs
+  agents/
+    plannerAgent.ts                        ← uses resolveBrandCognitionContext from CPL
+    transformAgent.ts                      ← uses resolveBrandCognitionContext from CPL
+instrumentation.ts                         ← initCPL() then bootstrapArtifactEngine()
+```
+
+### Startup sequence (instrumentation.ts) — order is critical
+
+```typescript
+export async function register() {
+  await initCPL()              // 1st: wires all packages, loads admin settings from DB
+  bootstrapArtifactEngine()    // 2nd: registers artifact adapters + task prompts
+}
+// DO NOT reverse this order
+```
+
+---
+
+## Invariants
+
+**I-1 — Thin routes.** Immediate delegation to package functions.
+
+**I-2 — CPL is the generation entry.** No route calls downstream generation functions directly.
+
+**I-3 — BI via CPL proxy only.** No `@brandos/brand-intelligence` imports anywhere in `apps/web`.
+
+**I-4 — Auth from `@brandos/auth` directly.** No auth imports from `@brandos/presentation-layer`.
+
+**I-5 — `requireAdmin()` on all admin routes.**
+
+**I-6 — `instrumentation.ts` startup order.** `initCPL()` before `bootstrapArtifactEngine()`.
+
+**I-7 — No business logic in page components.** Pages fetch data and render.
+
+---
+
+## Safe Changes
+
+- Adding new workspace pages (display and fetch only)
+- Adding new admin pages consuming `AdminSettingsService`
+- Bug fixes to existing route handlers
+- Adding new API routes that delegate to CPL or auth package
+- Adding new BI operations to brand-memory route by calling CPL proxy functions
+
+---
+
+## Dangerous Changes
+
+- Adding direct `@brandos/brand-intelligence` imports (forbidden)
+- Adding auth imports from `@brandos/presentation-layer` (removed)
+- Changing `instrumentation.ts` startup sequence
+- Adding business logic to route handlers
+- Modifying `lib/auth-guard.ts`
+- Changing `lib/supabase-server.ts` client shape
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest
+**Location:** `__tests__/` (ISSUE-3: not currently in turbo pipeline)
+
+Required:
+- `__tests__/api/generate.test.ts` — happy path, auth guard, CPL error propagation
+- `__tests__/api/brand-memory.test.ts` — CPL proxy functions called correctly (not BI directly)
+- `__tests__/api/admin.test.ts` — admin auth guard
+- `__tests__/lib/auth-guard.test.ts` — requireUser, requireAdmin
+
+---
+
+## Known Technical Debt
+
+**ISSUE-3 (Medium):** `scripts/Test/` generation tests not in turbo pipeline. Move to `__tests__/`.
+
+**ISSUE-4 (Low):** Several routes type `supabase` as `any`. Should be `SupabaseClient<Database>`.
+
+**PostHog stubs:** `lib/server-analytics.ts` — `@brandos/telemetry-store` does not exist. Migration 3 not started.
+
+**`auth.createPersona()` missing:** Persona create in `/api/persona/route.ts` writes directly to Supabase (documented workaround). Fix when `@brandos/auth` adds `createPersona()`.
+
+---
+
+## Agent Instructions
+
+1. Read this file.
+2. Confirm the change is routing/display — not business logic.
+3. For new BI-related routes: call a CPL proxy function, never import `@brandos/brand-intelligence`.
+4. For new auth usage: import from `@brandos/auth` directly, not from `@brandos/presentation-layer`.
+5. For new API routes: thin handler, delegate to a package function, add `requireAdmin()` if under `/api/admin/`.
+6. Add `export const runtime = 'nodejs'` to new routes that use Node.js APIs.
+7. Run `pnpm build` after changes to catch Next.js compilation errors.

@@ -1,0 +1,235 @@
+# AGENT_CONTEXT — @brandos/auth
+
+**Layer:** L2 — Authentication  
+**Maturity:** L5 (R7 — Agentic-Ready)  
+**Build order position:** 3 of 16
+
+---
+
+## Package Purpose
+
+`@brandos/auth` is the single source of truth for all authentication operations and database CRUD. Every user, campaign, persona, and feedback operation flows through this package. It owns the Supabase client initialization and wraps all Supabase Auth and DB operations in typed interfaces.
+
+This package is orthogonal to AI generation. It knows nothing about artifacts, governance, or the LLM pipeline.
+
+---
+
+## Responsibilities
+
+| Concern | File |
+|---|---|
+| Supabase client initialization (browser + admin) | `src/auth/supabaseClient.ts` |
+| All Supabase Auth operations (signup, login, OAuth, magic link, signout) | `src/auth/authService.ts` |
+| React auth state context + `useAuth` hook | `src/auth/AuthProvider.tsx` |
+| OAuth callback route handler (Next.js) | `src/auth/callback-route.ts` |
+| All CRUD for `users`, `campaigns`, `personas`, `feedback` tables | `src/db/dbService.ts` |
+| React hooks wrapping DB operations with loading/error state | `src/hooks/index.ts` |
+| Central auth + DB configuration | `src/config.ts` |
+| Auth/DB shared type exports (re-exports from @brandos/contracts) | `src/types/index.ts` |
+
+---
+
+## Non-Responsibilities
+
+| Concern | Owner |
+|---|---|
+| AI generation logic | `@brandos/ai-runtime-layer` |
+| UI components | `@brandos/presentation-layer` |
+| Identity signal learning | `@brandos/brand-intelligence` |
+| Brand memory + persona generation prompts | `@brandos/control-plane-layer` |
+| Output compilation and governance | `@brandos/output-control-layer` |
+| Canonical type definitions for auth shapes | `@brandos/contracts` |
+
+---
+
+## Public Contracts
+
+The strict public API is declared in `src/IAuth.ts`. This is the authoritative contract for all dependent layers.
+
+**Import rule:** Always import from `'@brandos/auth'`. Never from internal sub-paths.
+
+```typescript
+// ✅ Correct
+import { AuthProvider, useAuth, getCampaigns, getPersonas } from '@brandos/auth'
+import type { AuthUser, CampaignRow, PersonaRow, DbResult } from '@brandos/auth'
+
+// ❌ Wrong — internal path
+import { authService } from '@brandos/auth/src/auth/authService'
+```
+
+### Interface Groups in IAuth.ts
+
+| Group | Interface | Purpose |
+|---|---|---|
+| A | `ISupabaseClients` | Browser + admin client access |
+| B | `IAuthOperations` | signUp, signIn, signOut, getSession |
+| C | `IUserOperations` | `public.users` CRUD |
+| D | `ICampaignOperations` | `public.campaigns` CRUD |
+| E | `IPersonaOperations` | `public.personas` CRUD + setDefault |
+| F | `IFeedbackOperations` | `public.feedback` insert + stats |
+| G | `UseCampaignsReturn` etc. | React hook return types |
+| Master | `IAuth` | Extends all groups above |
+
+### Key exports
+
+```typescript
+// React context
+export { AuthProvider, useAuth }
+
+// DB operations (direct functions)
+export {
+  getCampaigns, createCampaign, updateCampaign, deleteCampaign,
+  getPersonas, createPersona, updatePersona, deletePersona, setDefaultPersona,
+  submitFeedback, getFeedbackStats,
+}
+
+// Types — canonical in @brandos/contracts, re-exported here for backward compat
+export type {
+  AuthUser, AuthState, AuthSession,
+  UserRow, CampaignRow, PersonaRow, FeedbackRow,
+  NewCampaign, NewPersona, NewFeedback,
+  DbResult, DbListResult,
+}
+```
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | All shared type imports (AuthUser, CampaignRow, etc.) |
+| `@supabase/ssr` | `createBrowserClient`, `createServerClient` |
+| `@supabase/supabase-js` | `createClient` (admin) and type imports |
+| `react` | Auth context and hooks (peer dependency) |
+| `next` | `callback-route.ts` only (peer dependency) |
+
+**INVARIANT:** Never import from `@brandos/control-plane-layer`, `@brandos/brand-intelligence`, `@brandos/ai-runtime-layer`, or any other domain package.
+
+---
+
+## Consumers
+
+| Consumer | What they use |
+|---|---|
+| `@brandos/presentation-layer` | `AuthProvider`, `useAuth`, auth types (curated re-exports) |
+| `@brandos/control-plane-layer` | `dbService` operations, auth types |
+| `apps/web` | `AuthProvider`, auth hooks, `requireUser()`, DB operations |
+
+---
+
+## Internal Architecture
+
+### File structure
+
+```
+src/
+  IAuth.ts                    ← MASTER PUBLIC CONTRACT
+  index.ts                    ← Public barrel (re-exports from IAuth.ts)
+  config.ts                   ← Supabase URL/key config and client factory config
+  types/index.ts              ← Re-exports all types from @brandos/contracts
+  auth/
+    supabaseClient.ts         ← createBrowserClient, createServerClient, admin client
+    authService.ts            ← signUp, signIn, signOut, OAuth, magic link
+    AuthProvider.tsx          ← React context provider + useAuth hook
+    callback-route.ts         ← Next.js OAuth callback handler
+  db/
+    dbService.ts              ← Full CRUD for users/campaigns/personas/feedback
+  hooks/
+    index.ts                  ← useCampaigns, usePersonas, useFeedback (React hooks)
+  __tests__/
+    authService.test.ts
+    dbService.test.ts
+    IAuth.test.ts
+```
+
+### Key execution flows
+
+**Auth state initialization:**
+```
+AuthProvider mounts
+  → supabase.auth.getSession()
+  → setState({ user, session })
+  → subscribe to supabase.auth.onAuthStateChange()
+```
+
+**DB operation pattern:**
+```typescript
+const { data, error } = await supabase
+  .from('campaigns')
+  .select('*')
+  .eq('user_id', userId)
+  .returns<CampaignRow[]>()
+return error ? { data: null, error } : { data, error: null }
+```
+
+---
+
+## Invariants
+
+**I-1 — No domain layer imports.** Auth is orthogonal to AI generation. Never import from CPL, brand-intelligence, ai-runtime-layer, or any generation package.
+
+**I-2 — All types from contracts.** Auth types are canonical in `@brandos/contracts/src/auth-types.ts`. Do not redefine `AuthUser`, `CampaignRow`, etc. here. Re-export them from `src/types/index.ts`.
+
+**I-3 — IAuth.ts is authoritative.** The public API is what `IAuth.ts` declares. If a function is not in `IAuth.ts`, it is internal.
+
+**I-4 — Callback route is Next.js-specific.** `callback-route.ts` depends on `next/headers` and belongs in this package's `src/auth/` directory, not in `apps/web`. The Next.js framework dependency here is deliberate.
+
+**I-5 — No direct Supabase imports in consuming packages.** Consuming packages must use this package's client factory rather than calling `createBrowserClient` directly. The one exception is `apps/web/lib/supabase-server.ts` which uses `@supabase/ssr` directly as a documented exception.
+
+---
+
+## Safe Changes
+
+- Adding new DB operations to `dbService.ts` for existing tables
+- Adding new React hooks in `src/hooks/index.ts` wrapping existing DB ops
+- Bug fixes in auth flows (with regression tests)
+- Expanding `IAuth.ts` with new interface groups (additive only)
+
+---
+
+## Dangerous Changes
+
+- Changing the Supabase client initialization shape (breaks downstream clients)
+- Renaming or removing any `IAuth` interface group method
+- Changing `AuthProvider` context shape (breaks `useAuth()` calls platform-wide)
+- Changing the callback route handler (breaks OAuth flows)
+- Removing any type re-export from `src/types/index.ts`
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest (vitest.config.ts)  
+**Location:** `src/__tests__/`
+
+Required coverage areas:
+- `authService.test.ts` — signUp/signIn/signOut flows, error handling, session retrieval
+- `dbService.test.ts` — CRUD for all four tables, error paths, type correctness
+- `IAuth.test.ts` — interface surface verification: all declared methods are implemented
+
+---
+
+## Known Technical Debt
+
+- `AGENT_CONTEXT.md` still references `@brandos/identity-layer` (old package name). Current name is `@brandos/brand-intelligence`. Documentation debt only — no code impact.
+- `updatePersonaProfile()` referenced in some contexts as owned here — this is now `@deprecated` per Fix G1. The canonical version lives in `@brandos/brand-intelligence`.
+
+---
+
+## Current Migration Status
+
+### Auth Type Migration (Complete)
+All auth/DB types are now canonical in `@brandos/contracts/src/auth-types.ts`. This package re-exports them from `src/types/index.ts` for backward compatibility. No further migration needed.
+
+---
+
+## Agent Instructions
+
+Before modifying this package:
+
+1. Read this file.
+2. Read `src/IAuth.ts` — this is the contract. Any change to the public API must update IAuth.ts first.
+3. Confirm you are not adding imports from domain packages (CPL, ai-runtime, governance, etc.).
+4. Update tests in `src/__tests__/` for any behavior changes.
+5. If adding a new DB operation, add it to the appropriate interface group in `IAuth.ts` before implementing.

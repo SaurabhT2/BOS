@@ -1,0 +1,2042 @@
+{
+  "_meta": {
+    "generated": "2026-07-02 11:05:17 UTC",
+    "source": "live-postgres",
+    "connection": "DATABASE_URL",
+    "table_count": 24,
+    "column_count": 268,
+    "fk_count": 14,
+    "index_count": 81
+  },
+  "tables": [
+    {
+      "table": "brand_assets",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "user_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "vlm_analysis",
+          "type": "jsonb",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "name",
+          "type": "text",
+          "nullable": "NO",
+          "default": "''::text"
+        },
+        {
+          "column": "original_filename",
+          "type": "text",
+          "nullable": "NO",
+          "default": "''::text"
+        },
+        {
+          "column": "mime_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": "''::text"
+        },
+        {
+          "column": "size_bytes",
+          "type": "bigint",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "storage_path",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "metadata",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": "'{}'::jsonb"
+        },
+        {
+          "column": "tags",
+          "type": "ARRAY",
+          "nullable": "NO",
+          "default": "'{}'::text[]"
+        },
+        {
+          "column": "usage_count",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "archived_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "status",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'indexed'::text"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "brand_assets_created_at_idx",
+        "brand_assets_pkey",
+        "brand_assets_storage_path_key",
+        "brand_assets_tags_idx",
+        "brand_assets_user_id_idx",
+        "brand_assets_workspace_id_idx",
+        "brand_assets_workspace_mime_idx",
+        "brand_assets_workspace_status_idx"
+      ]
+    },
+    {
+      "table": "brand_memory_entries",
+      "columns": [
+        {
+          "column": "id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "source_request_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "content",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "confidence",
+          "type": "double precision",
+          "nullable": "NO",
+          "default": "0.5"
+        },
+        {
+          "column": "frequency",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "1"
+        },
+        {
+          "column": "version",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "1"
+        },
+        {
+          "column": "status",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'pending_review'::text"
+        },
+        {
+          "column": "source_score",
+          "type": "double precision",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "reviewed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "reviewed_by",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "classification",
+          "type": "character",
+          "nullable": "NO",
+          "default": "'C'::bpchar"
+        },
+        {
+          "column": "topic_diversity",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "1"
+        },
+        {
+          "column": "source_topic_hash",
+          "type": "character varying",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "last_seen_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "decayed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "decay_rate",
+          "type": "numeric",
+          "nullable": "NO",
+          "default": "0.80"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brand_memory_entries_pkey",
+        "brand_memory_entries_workspace_status",
+        "brand_memory_entries_workspace_type_content",
+        "idx_bme_v2_last_seen_status",
+        "idx_bme_v2_topic_hash",
+        "idx_bme_v2_workspace_class_status",
+        "idx_bme_v2_workspace_type_status"
+      ]
+    },
+    {
+      "table": "brandos_admin_settings",
+      "columns": [
+        {
+          "column": "id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "section",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "data",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_admin_settings_pkey"
+      ]
+    },
+    {
+      "table": "brandos_artifact_approvals",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "request_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "artifact_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "approval_status",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'pending'::text"
+        },
+        {
+          "column": "approval_reason",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "score",
+          "type": "double precision",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "reviewed_by",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "reviewed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_artifact_approvals_pkey",
+        "brandos_artifact_approvals_request_id",
+        "brandos_artifact_approvals_request_id_key",
+        "brandos_artifact_approvals_workspace_status"
+      ]
+    },
+    {
+      "table": "brandos_artifact_versions",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "request_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "artifact_type",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "version",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "1"
+        },
+        {
+          "column": "score",
+          "type": "double precision",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "stamped_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "campaign_id",
+          "type": "uuid",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "stored_artifact",
+          "type": "jsonb",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_artifact_versions_campaign_idx",
+        "brandos_artifact_versions_campaign_version_uidx",
+        "brandos_artifact_versions_pkey",
+        "brandos_artifact_versions_workspace_idx",
+        "idx_artifact_versions_request",
+        "idx_artifact_versions_workspace_time"
+      ]
+    },
+    {
+      "table": "brandos_governance_audit",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "request_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "artifact_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "score",
+          "type": "double precision",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "passed",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "violations",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": "'[]'::jsonb"
+        },
+        {
+          "column": "repaired",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": "false"
+        },
+        {
+          "column": "repair_attempts",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "timestamp",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_governance_audit_pkey",
+        "brandos_governance_audit_request_id",
+        "brandos_governance_audit_workspace_created",
+        "brandos_governance_audit_workspace_idx"
+      ]
+    },
+    {
+      "table": "brandos_provider_credentials",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "provider_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "encrypted_key",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "iv",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "auth_tag",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "validated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": "now()"
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_provider_credentials_pkey",
+        "brandos_provider_credentials_provider_id_key",
+        "idx_credentials_provider_id"
+      ]
+    },
+    {
+      "table": "brandos_provider_health",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "provider_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "healthy",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "latency_ms",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "reason",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "checked_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_provider_health_pkey",
+        "idx_provider_health_provider_checked"
+      ]
+    },
+    {
+      "table": "brandos_score_history",
+      "columns": [
+        {
+          "column": "id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "user_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "task_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "model_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'unknown'::text"
+        },
+        {
+          "column": "score",
+          "type": "numeric",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "retries",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "latency_ms",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "approved",
+          "type": "boolean",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "campaign_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "artifact_type",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "version",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "timestamp",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "metadata",
+          "type": "jsonb",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "brandos_score_history_pkey",
+        "brandos_score_history_task_type_idx",
+        "brandos_score_history_timestamp_idx",
+        "brandos_score_history_workspace_idx"
+      ]
+    },
+    {
+      "table": "campaigns",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "uuid_generate_v4()"
+        },
+        {
+          "column": "user_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "title",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "topic",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "format",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "status",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'draft'::text"
+        },
+        {
+          "column": "content",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": "'{}'::jsonb"
+        },
+        {
+          "column": "qa_score_before",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "qa_score_after",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "persona_id",
+          "type": "uuid",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "override_mode",
+          "type": "text",
+          "nullable": "YES",
+          "default": "'standard'::text"
+        },
+        {
+          "column": "cp_request_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "cp_retries",
+          "type": "integer",
+          "nullable": "YES",
+          "default": "0"
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "campaign_brief_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "campaign_brief_title",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "campaign_brief_topic",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "campaign_brief_tone",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "persona_id",
+          "references_table": "personas",
+          "references_column": "id"
+        },
+        {
+          "column": "user_id",
+          "references_table": "users",
+          "references_column": "id"
+        },
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "campaigns_brief_workspace_idx",
+        "campaigns_created_at_idx",
+        "campaigns_pkey",
+        "campaigns_user_id_idx",
+        "campaigns_workspace_id_idx"
+      ]
+    },
+    {
+      "table": "cp_telemetry",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "request_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "user_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "task_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "override_mode",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'standard'::text"
+        },
+        {
+          "column": "provider",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "model_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "latency_ms",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "total_retries",
+          "type": "integer",
+          "nullable": "YES",
+          "default": "0"
+        },
+        {
+          "column": "initial_score",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "final_score",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "tokens_used",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "cost_estimate_usd",
+          "type": "numeric",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "failure_reasons",
+          "type": "ARRAY",
+          "nullable": "YES",
+          "default": "'{}'::text[]"
+        },
+        {
+          "column": "policy_violations",
+          "type": "ARRAY",
+          "nullable": "YES",
+          "default": "'{}'::text[]"
+        },
+        {
+          "column": "satisfaction_feedback",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "timestamp",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "cp_telemetry_final_score_idx",
+        "cp_telemetry_pkey",
+        "cp_telemetry_task_type_idx",
+        "cp_telemetry_timestamp_idx",
+        "cp_telemetry_user_id_idx"
+      ]
+    },
+    {
+      "table": "cp_telemetry_summary",
+      "columns": [
+        {
+          "column": "user_id",
+          "type": "uuid",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "day",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "total_requests",
+          "type": "bigint",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "avg_score",
+          "type": "numeric",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "avg_latency_ms",
+          "type": "numeric",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "total_retries",
+          "type": "bigint",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "total_cost_usd",
+          "type": "numeric",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "low_quality_count",
+          "type": "bigint",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [],
+      "foreign_keys": [],
+      "indexes": []
+    },
+    {
+      "table": "feedback",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "uuid_generate_v4()"
+        },
+        {
+          "column": "user_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "campaign_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "signal",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "note",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "campaign_id",
+          "references_table": "campaigns",
+          "references_column": "id"
+        },
+        {
+          "column": "user_id",
+          "references_table": "users",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "feedback_campaign_id_idx",
+        "feedback_pkey",
+        "feedback_user_id_idx"
+      ]
+    },
+    {
+      "table": "figma_handoff_tokens",
+      "columns": [
+        {
+          "column": "token",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "artifact_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "artifact",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "created_by",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "consumed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "token"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "figma_handoff_tokens_expiry_idx",
+        "figma_handoff_tokens_pkey"
+      ]
+    },
+    {
+      "table": "identity_signals",
+      "columns": [
+        {
+          "column": "id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "persona_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "dimension",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "signal_type",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "value",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "raw_confidence",
+          "type": "double precision",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "frequency",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "1"
+        },
+        {
+          "column": "weighted_confidence",
+          "type": "double precision",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "status",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'active'::text"
+        },
+        {
+          "column": "source_request_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "source_artifact_score",
+          "type": "double precision",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "last_seen_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "decayed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "metadata",
+          "type": "jsonb",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "identity_signals_pkey",
+        "idx_identity_signals_persona",
+        "idx_identity_signals_workspace"
+      ]
+    },
+    {
+      "table": "identity_versions",
+      "columns": [
+        {
+          "column": "id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "persona_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "version",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "1"
+        },
+        {
+          "column": "signal_count",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "resolved_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "snapshot",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "is_current",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": "true"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "identity_versions_pkey",
+        "idx_identity_versions_workspace"
+      ]
+    },
+    {
+      "table": "personas",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "uuid_generate_v4()"
+        },
+        {
+          "column": "user_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "name",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "tone",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "domain",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "audience",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "key_themes",
+          "type": "ARRAY",
+          "nullable": "NO",
+          "default": "'{}'::text[]"
+        },
+        {
+          "column": "visual_style",
+          "type": "jsonb",
+          "nullable": "NO",
+          "default": "'{}'::jsonb"
+        },
+        {
+          "column": "is_default",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": "false"
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "users",
+          "references_column": "id"
+        },
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "personas_pkey",
+        "personas_user_default_idx",
+        "personas_user_id_idx",
+        "personas_workspace_id_idx"
+      ]
+    },
+    {
+      "table": "users",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "email",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "name",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "avatar_url",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "plan",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'free'::text"
+        },
+        {
+          "column": "generations_used",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "is_platform_admin",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": "false"
+        },
+        {
+          "column": "onboarding_completed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "users_pkey",
+        "users_workspace_id_idx"
+      ]
+    },
+    {
+      "table": "workspace_api_keys",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "provider",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "key_hint",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "encrypted_key",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "iv",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "auth_tag",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "is_active",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": "true"
+        },
+        {
+          "column": "validated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_by",
+          "type": "uuid",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "rotated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "revoked_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "created_by",
+          "references_table": "users",
+          "references_column": "id"
+        },
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "idx_workspace_api_keys_workspace",
+        "workspace_api_keys_one_active_per_provider",
+        "workspace_api_keys_pkey"
+      ]
+    },
+    {
+      "table": "workspace_oauth_connections",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "workspace_id",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "provider",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "encrypted_access_token",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "access_token_iv",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "access_token_auth_tag",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "encrypted_refresh_token",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "refresh_token_iv",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "refresh_token_auth_tag",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "scopes",
+          "type": "ARRAY",
+          "nullable": "NO",
+          "default": "'{}'::text[]"
+        },
+        {
+          "column": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "external_account_label",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "is_active",
+          "type": "boolean",
+          "nullable": "NO",
+          "default": "true"
+        },
+        {
+          "column": "connected_by",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "connected_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "refreshed_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "revoked_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "workspace_oauth_connections_active_uidx",
+        "workspace_oauth_connections_pkey",
+        "workspace_oauth_connections_workspace_idx"
+      ]
+    },
+    {
+      "table": "workspace_provider_health",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "provider",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "last_success_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "last_failure_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "failure_count",
+          "type": "integer",
+          "nullable": "NO",
+          "default": "0"
+        },
+        {
+          "column": "last_validated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "idx_workspace_provider_health_workspace",
+        "workspace_provider_health_one_row_per_provider",
+        "workspace_provider_health_pkey"
+      ]
+    },
+    {
+      "table": "workspace_provider_usage",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "provider",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "model_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "request_id",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "prompt_tokens",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "completion_tokens",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "total_tokens",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "estimated_cost_usd",
+          "type": "numeric",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "idx_workspace_provider_usage_workspace_provider",
+        "idx_workspace_provider_usage_workspace_time",
+        "workspace_provider_usage_pkey"
+      ]
+    },
+    {
+      "table": "workspace_settings",
+      "columns": [
+        {
+          "column": "workspace_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "preferred_provider",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "runtime_mode",
+          "type": "text",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "governance_score_threshold",
+          "type": "numeric",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "monthly_generation_limit",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "asset_storage_limit_mb",
+          "type": "integer",
+          "nullable": "YES",
+          "default": null
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "workspace_id"
+      ],
+      "foreign_keys": [
+        {
+          "column": "workspace_id",
+          "references_table": "workspaces",
+          "references_column": "id"
+        }
+      ],
+      "indexes": [
+        "workspace_settings_pkey"
+      ]
+    },
+    {
+      "table": "workspaces",
+      "columns": [
+        {
+          "column": "id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": "gen_random_uuid()"
+        },
+        {
+          "column": "name",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "slug",
+          "type": "text",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "owner_id",
+          "type": "uuid",
+          "nullable": "NO",
+          "default": null
+        },
+        {
+          "column": "plan",
+          "type": "text",
+          "nullable": "NO",
+          "default": "'explorer'::text"
+        },
+        {
+          "column": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        },
+        {
+          "column": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "NO",
+          "default": "now()"
+        }
+      ],
+      "primary_keys": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        "workspaces_owner_id_idx",
+        "workspaces_pkey",
+        "workspaces_slug_key"
+      ]
+    }
+  ]
+}

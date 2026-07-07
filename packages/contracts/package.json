@@ -1,0 +1,33 @@
+{
+  "name": "@brandos/contracts",
+  "version": "2.0.0",
+  "description": "Canonical type kernel — interfaces, registries, identity types. Depends only on @platform/cognition-contract (also zero-dependency, types-only) for the cross-platform CognitionContext.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@platform/cognition-contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^2.0.5",
+    "rimraf": "^5.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^2.0.5"
+  }
+}
+
+

@@ -1,0 +1,48 @@
+{
+  "name": "@brandos/control-plane-layer",
+  "version": "2.0.0",
+  "description": "Orchestration kernel \u2014 workflow coordination, execution lifecycle (L5 refactored)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:contract": "vitest run __tests__/contract",
+    "test:unit": "vitest run __tests__/unit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brandos/ai-runtime-layer": "workspace:*",
+    "@brandos/artifact-config": "workspace:*",
+    "@brandos/artifact-engine-layer": "workspace:*",
+    "@brandos/cognition-client": "workspace:*",
+    "@platform/cognition-contract": "workspace:*",
+    "@brandos/contracts": "workspace:*",
+    "@brandos/governance-config": "workspace:*",
+    "@brandos/governance-layer": "workspace:*",
+    "@brandos/output-control-layer": "workspace:*",
+    "@brandos/runtime-config": "workspace:*",
+    "@brandos/shared-utils": "workspace:*",
+    "@brandos/auth": "workspace:*",
+    "@supabase/supabase-js": "^2.39.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^2.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./brand-memory/service": {
+      "types": "./dist/brand-memory/service.d.ts",
+      "default": "./dist/brand-memory/service.js"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.npmrc
+
+# Build output — regenerate with `pnpm build` (see Engineering/PLATFORM_INTEGRATION.md)
+dist/
+.next/
+out/
+
+# TypeScript incremental/composite build info.
+# IMPORTANT: tsc writes these next to tsconfig.json by default, NOT inside
+# dist/. If one gets committed and later goes stale, `tsc` will treat the
+# project as already up to date and silently emit nothing on the next build —
+# see the Repository Portability Report for a case where exactly this
+# happened. `pnpm clean` / platform-clean.ps1 -DeepClean both sweep these;
+# they should never be committed in the first place.
+*.tsbuildinfo
+
+# Turborepo
+.turbo/
+
+# Test artifacts
+coverage/
+
+# Packaging output (scripts/package-workspace.ps1 default destination)
+_workspaces/
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Editor / OS noise
+.DS_Store
+*.log

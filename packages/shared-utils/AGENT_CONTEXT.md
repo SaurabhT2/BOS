@@ -1,0 +1,208 @@
+# AGENT_CONTEXT — @brandos/shared-utils
+
+**Layer:** L1 — Infrastructure Helpers  
+**Maturity:** L5 (Autonomous Ecosystem)  
+**Build order position:** 2 of 16
+
+---
+
+## Package Purpose
+
+Infrastructure primitive layer. Stateless utility functions and injectable infrastructure classes used by every layer above this one. Owns zero domain logic, zero artifact logic, zero skill logic.
+
+This package exists to prevent every package from reimplementing retry, circuit breaking, rate limiting, logging, and JSON repair from scratch. It is the lowest-level non-type package.
+
+---
+
+## Responsibilities
+
+| Capability Key | Exported Symbols | File |
+|---|---|---|
+| `utils.logger` | `Logger`, `generateRequestId` | `src/logger.ts` |
+| `utils.retry` | `withRetry`, `retryOptionsFromBudget`, `RetryOptions` | `src/retry.ts` |
+| `utils.circuitbreaker` | `CircuitBreaker`, `CircuitBreakerConfig` | `src/resilience.ts` |
+| `utils.ratelimiter` | `RateLimiter`, `RateLimitConfig` | `src/resilience.ts` |
+| `utils.costtracker` | `CostTracker`, `CostEntry` | `src/resilience.ts` |
+| `utils.env` | `validateEnv`, `requireEnv`, `EnvValidationResult` | `src/env.ts` |
+| `utils.constants` | `BRANDOS_VERSION`, `DEFAULT_TIMEOUTS`, `DEFAULT_RETRY`, `LOG_LEVELS` | `src/constants.ts` |
+| `utils.json` | `repairJSON`, `extractJSON` | `src/json-utils.ts` |
+
+`repairJSON` and `extractJSON` were migrated from `@brandos/output-control-layer` (Fix C2). Any package needing these utilities must import from `@brandos/shared-utils`, not from OCL.
+
+---
+
+## Non-Responsibilities
+
+This package must NEVER own:
+- Artifact compilation logic
+- Governance rules or thresholds
+- AI provider SDK calls
+- Supabase client code
+- React components or hooks
+- Business domain logic of any kind
+- Identity resolution or brand memory
+- Skill lifecycle management
+
+---
+
+## Public Contracts
+
+The only file consumers should import from is `src/index.ts` via `@brandos/shared-utils`.
+
+```typescript
+import {
+  Logger,
+  generateRequestId,
+  withRetry,
+  retryOptionsFromBudget,
+  CircuitBreaker,
+  RateLimiter,
+  CostTracker,
+  validateEnv,
+  requireEnv,
+  repairJSON,
+  extractJSON,
+  BRANDOS_VERSION,
+  DEFAULT_TIMEOUTS,
+  DEFAULT_RETRY,
+  LOG_LEVELS,
+} from '@brandos/shared-utils'
+```
+
+`src/ISharedUtils.ts` is the machine-readable interface boundary. `src/IPackage.ts` is the machine-readable package descriptor.
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | Type imports only: `ICircuitBreaker`, `IRateLimiter`, `ICostTracker`, `ProviderName`, etc. |
+
+No other `@brandos/*` packages. No Supabase. No React. No Next.js.
+
+---
+
+## Consumers
+
+Every package in the monorepo except `@brandos/contracts` depends on this package.
+
+Critical consumers:
+- `@brandos/ai-runtime-layer` — Logger, withRetry, CircuitBreaker, RateLimiter, CostTracker
+- `@brandos/brand-intelligence` — Logger, withRetry
+- `@brandos/control-plane-layer` — Logger
+- `@brandos/output-control-layer` — repairJSON, extractJSON (re-exported from here for backward compat)
+- `@brandos/governance-layer` — (removed dependency in L5 migration)
+
+---
+
+## Internal Architecture
+
+### File structure
+
+```
+src/
+  index.ts              ← PUBLIC API (re-exports only — no logic here)
+  ISharedUtils.ts       ← interface boundary file
+  IPackage.ts           ← package boundary declaration
+  constants.ts          ← BRANDOS_VERSION, DEFAULT_TIMEOUTS, DEFAULT_RETRY, LOG_LEVELS
+  env.ts                ← validateEnv, requireEnv, EnvValidationResult
+  logger.ts             ← Logger class, generateRequestId
+  resilience.ts         ← CircuitBreaker, RateLimiter, CostTracker
+  retry.ts              ← withRetry, retryOptionsFromBudget
+  json-utils.ts         ← repairJSON, extractJSON (migrated from OCL — Fix C2)
+  __tests__/
+    ISharedUtils.test.ts      ← interface surface + architecture boundary tests
+    constants.test.ts
+    env.test.ts
+    logger.test.ts
+    resilience.test.ts
+    retry.test.ts
+```
+
+**CRITICAL: No root-level `.ts` files.** Root shadow files were deleted in FIX-3 (L5 upgrade). The `tsconfig.json` `rootDir` is `src/`. Any `.ts` file placed at the package root would NOT be compiled into `dist/`.
+
+### Key execution flows
+
+**Retry with circuit breaker:**
+```typescript
+const cb = new CircuitBreaker({ failureThreshold: 5, timeout: 30000 })
+await withRetry(
+  () => cb.call(() => someAsyncOperation()),
+  { maxAttempts: 3, backoff: 'exponential' }
+)
+```
+
+**JSON repair pipeline (used by OCL internally):**
+```typescript
+const extracted = extractJSON(rawLlmOutput)
+const repaired = repairJSON(extracted ?? rawLlmOutput)
+```
+
+---
+
+## Invariants
+
+**I-1 — Stateless utilities.** No module-level mutable state. `CircuitBreaker` and `RateLimiter` instances hold state, but that state is owned by the caller and passed around explicitly.
+
+**I-2 — No domain imports.** This package may only import from `@brandos/contracts` (type imports only). Nothing else.
+
+**I-3 — No root-level `.ts` files.** `tsconfig.json` `rootDir` is `src/`. Root files are not compiled. Verified in FIX-3.
+
+**I-4 — `repairJSON`/`extractJSON` are canonical here.** Do not reimplement these in other packages. Import from `@brandos/shared-utils`. OCL re-exports them for backward compat only.
+
+**I-5 — `withRetry` is the retry primitive.** Do not implement custom retry loops inline in other packages.
+
+---
+
+## Safe Changes
+
+- Adding new stateless utility functions to `src/`
+- Adding exports to `src/index.ts` for new utilities
+- Bug fixes to existing utility implementations (with regression tests)
+- Adding tests
+
+---
+
+## Dangerous Changes
+
+- Changing the `Logger` constructor signature or core log methods (breaks every package)
+- Changing `withRetry` call signature (breaks retry usage platform-wide)
+- Changing `CircuitBreaker` state machine behavior (impacts ai-runtime-layer reliability)
+- Removing `repairJSON` or `extractJSON` (breaks OCL's backward-compat re-exports)
+- Removing `BRANDOS_VERSION` or `DEFAULT_TIMEOUTS` (breaks package health checks)
+
+---
+
+## Test Strategy
+
+**Test runner:** Jest (jest.config.js)  
+**Location:** `src/__tests__/`
+
+Required coverage areas:
+- `ISharedUtils.test.ts` — architecture boundary tests: verify that no `@brandos/*` packages beyond contracts are imported
+- `resilience.test.ts` — CircuitBreaker state transitions (CLOSED → OPEN → HALF-OPEN → CLOSED)
+- `retry.test.ts` — retry with backoff, max attempts, abort signal
+- `env.test.ts` — required env validation, missing vars, type coercion
+- `logger.test.ts` — log levels, structured output
+- `constants.test.ts` — constant shapes haven't regressed
+
+---
+
+## Known Technical Debt
+
+- `json-utils.ts` was migrated from OCL (Fix C2) but the OCL backward-compat re-exports still exist. At some point those re-exports can be removed if all direct OCL imports are gone.
+- No architecture boundary tests verify that new files don't accidentally import higher-layer packages.
+
+---
+
+## Agent Instructions
+
+Before modifying this package:
+
+1. Read this file.
+2. Read `src/ISharedUtils.ts` to understand the declared interface surface.
+3. Confirm your change does not add any `@brandos/*` imports beyond `@brandos/contracts`.
+4. Verify no root-level `.ts` files are created (rootDir is `src/`).
+5. Add or update tests in `src/__tests__/`.
+6. Run `pnpm test` in this package after changes.

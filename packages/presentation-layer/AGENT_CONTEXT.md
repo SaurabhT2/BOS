@@ -1,0 +1,317 @@
+# AGENT_CONTEXT — @brandos/presentation-layer
+
+**Layer:** L8 — UI Components
+**Maturity:** L4 (Wave C upgrade complete)
+**Build order position:** 15 of 16
+**Last updated:** Cleanup Sprint 2 WS1 — @brandos/auth removed; PLAuthProvider introduced
+
+---
+
+## Package Purpose
+
+Pure React artifact renderers and workspace shells. Consumers receive an `ArtifactV2` object and use this package's renderers to display it.
+
+**As of Cleanup Sprint 2 WS1:** This package is now a **pure UI package**. It no longer depends on `@brandos/auth` at all — not in `package.json`, and not re-exported from `src/index.ts`. Shell components that need to render auth state (`WorkspaceShell`, `AdminShell`) now receive auth via an injected `PLAuthContext` rather than importing `useAuth()` directly.
+
+---
+
+## Responsibilities
+
+| Component | Purpose |
+|---|---|
+| `CarouselRenderer` | Renders a `CarouselArtifact` |
+| `DeckRenderer` | Renders a `DeckArtifact` |
+| `ReportRenderer` | Renders a `ReportArtifact` |
+| `RendererRegistry` | Maps `ArtifactType → React component` |
+| `WorkspaceShell` | Top-level workspace layout (reads auth from `usePLAuth()`) |
+| `AdminShell` | Admin panel layout (reads auth from `usePLAuth()`) |
+| `GenerationProgressDisplay` | Real-time generation activity log |
+| `ModelSelector` | Provider/model selection UI |
+| `RuntimeModeSelector` | Runtime mode toggle UI |
+| **`PLAuthProvider`** (NEW) | Injects `IPLAuthContext` value into PL shell components |
+| **`IPLAuthContext`** (NEW) | Minimal auth shape PL components need (no `@brandos/auth` import) |
+
+---
+
+## Non-Responsibilities
+
+- Business logic
+- AI generation calls
+- Artifact compilation or normalization
+- Governance validation
+- Control plane orchestration
+- Brand intelligence
+- **Re-exporting `@brandos/auth` symbols** (removed Cleanup Sprint 2 WS1)
+- **Depending on `@brandos/auth` at the package level** (removed from `package.json`)
+
+---
+
+## Cleanup Sprint 2 WS1: Auth Decoupling
+
+### What changed
+
+**Before:**
+- `package.json` had `"@brandos/auth": "workspace:*"` as a dependency
+- `src/index.ts` explicitly re-exported `AuthProvider`, `useAuth`, `authService`, `supabase`, `getSupabaseClient`, `getSupabaseAdmin`, and auth types
+- `WorkspaceShell` and `AdminShell` called `useAuth()` from `@brandos/auth` directly
+
+**After:**
+- `@brandos/auth` removed from `package.json` dependencies
+- No `@brandos/auth` symbols in `src/index.ts`
+- Shell components call `usePLAuth()` which reads from `PLAuthContext`
+- New exports: `PLAuthProvider`, `IPLAuthContext`
+- `apps/web/lib/pl-auth-bridge.tsx` bridges `useAuth()` from `@brandos/auth` into `PLAuthProvider`
+
+### Migration for apps/web consumers
+
+```typescript
+// ❌ BEFORE — importing auth from presentation-layer
+import { AuthProvider, useAuth, authService } from '@brandos/presentation-layer'
+
+// ✅ AFTER — import auth directly from @brandos/auth
+import { AuthProvider, useAuth, authService } from '@brandos/auth'
+import type { AuthUser, AuthSession } from '@brandos/auth'
+```
+
+```typescript
+// apps/web root layout — wrap in PLAuthBridge
+import { AuthProvider } from '@brandos/auth'
+import { PLAuthBridge } from '@/lib/pl-auth-bridge'
+
+export default function RootLayout({ children }) {
+  return (
+    <AuthProvider>
+      <PLAuthBridge>   {/* injects auth state into PLAuthContext for shell components */}
+        {children}
+      </PLAuthBridge>
+    </AuthProvider>
+  )
+}
+```
+
+### IPLAuthContext — the injection contract
+
+```typescript
+export interface IPLAuthContext {
+  /** Authenticated user — null when not logged in */
+  user: { email?: string | null } | null
+  /** Log out the current user */
+  logout: () => void | Promise<void>
+}
+```
+
+Shell components (`WorkspaceShell`, `AdminShell`) render `user?.email` and wire `logout` to a button. They do not need any other auth fields.
+
+---
+
+## Public Contracts
+
+Import from `@brandos/presentation-layer` only. No subpath imports.
+
+```typescript
+import {
+  // Artifact renderers
+  CarouselRenderer,
+  DeckRenderer,
+  ReportRenderer,
+  RendererRegistry,
+
+  // Workspace shells
+  WorkspaceShell,
+  AdminShell,
+
+  // Generation UI
+  GenerationProgressDisplay,
+
+  // Runtime controls
+  ModelSelector,
+  RuntimeModeSelector,
+
+  // Auth injection (Cleanup Sprint 2 WS1)
+  PLAuthProvider,
+} from '@brandos/presentation-layer'
+
+import type {
+  CarouselRendererProps,
+  DeckRendererProps,
+  ReportRendererProps,
+  WorkspaceShellProps,
+  GenerationProgressDisplayProps,
+  IPLAuthContext,    // NEW
+  IPresentationLayer,
+} from '@brandos/presentation-layer'
+```
+
+**No `AuthProvider`, `useAuth`, `authService`, `supabase`, `getSupabaseClient`, `getSupabaseAdmin`, `AuthUser`, `AuthSession`, `AuthState`, or `UserPlan` are exported from this package.** Consumers import them from `@brandos/auth` directly.
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | `ArtifactV2`, `ActivityEntry`, `PipelineStage` |
+| `@brandos/ui-admin` | `AdminCard`, `Toggle`, `StatCard` for admin shell primitives |
+| `react` | Peer dependency |
+| `next` | Peer dependency |
+
+**Removed (Cleanup Sprint 2 WS1):** `@brandos/auth`
+
+### Forbidden Imports (ENFORCED by boundary tests)
+
+```
+@brandos/auth                  — removed from package.json; internal shell usage via PLAuthContext only
+@brandos/ai-runtime-layer      — RULE-9
+@brandos/output-control-layer  — RULE-9
+@brandos/governance-layer      — RULE-9
+@brandos/control-plane-layer   — RULE-9
+@brandos/brand-intelligence    — RULE-9
+```
+
+**Exception:** Shell components (`WorkspaceShell`, `AdminShell`) import `usePLAuth()` from `./auth/PLAuthContext` (internal to this package). This is NOT an import from `@brandos/auth`. The boundary test verifies that `src/index.ts` does not re-export `@brandos/auth` symbols.
+
+---
+
+## Consumers
+
+| Consumer | What they use |
+|---|---|
+| `apps/web` | All renderers, workspace shells, `GenerationProgressDisplay`, selectors, `PLAuthProvider` |
+
+---
+
+## Internal Architecture
+
+```
+src/
+  index.ts                          ← PUBLIC API barrel (no @brandos/auth re-exports)
+  IPresentationLayer.ts             ← machine-readable interface boundary
+  IPackage.ts                       ← package metadata (updated WS1)
+  validatePackage.ts
+  PresentationCapabilityRegistry.ts
+  auth/
+    PLAuthContext.tsx               ← NEW (WS1): IPLAuthContext, PLAuthProvider, usePLAuth()
+  renderers/
+    CarouselRenderer.tsx            ← 'use client'
+    DeckRenderer.tsx                ← 'use client'
+    ReportRenderer.tsx              ← 'use client'
+    RendererRegistry.ts
+  shells/
+    WorkspaceShell.tsx              ← 'use client' — calls usePLAuth() (not useAuth)
+    AdminShell.tsx                  ← 'use client' — calls usePLAuth() (not useAuth)
+  generation/
+    GenerationProgressDisplay.tsx   ← 'use client'
+  controls/
+    ModelSelector.tsx               ← 'use client'
+    RuntimeModeSelector.tsx         ← 'use client'
+  __tests__/
+    unit/
+      dependencyBoundary.test.ts    ← UPDATED (WS1): now also asserts no @brandos/auth in src/index.ts
+    renderers/
+      CarouselRenderer.test.tsx
+      DeckRenderer.test.tsx
+      ReportRenderer.test.tsx
+    generation/
+      GenerationProgressDisplay.test.tsx
+    validatePackage.test.ts
+```
+
+### PLAuthContext pattern
+
+```typescript
+// src/auth/PLAuthContext.tsx
+export interface IPLAuthContext {
+  user: { email?: string | null } | null
+  logout: () => void | Promise<void>
+}
+
+// Provider (used by apps/web via PLAuthBridge)
+export function PLAuthProvider({ value, children }: { value: IPLAuthContext; children: ReactNode })
+
+// Hook (used by shell components internally)
+export function usePLAuth(): IPLAuthContext  // throws if no provider
+```
+
+---
+
+## Invariants
+
+**I-1 — No semantic inference in renderers.** Renderers display what they receive.
+
+**I-2 — `'use client'` required** on all interactive components.
+
+**I-3 — `RendererRegistry` is dynamic dispatch.** New artifact types are registered here.
+
+**I-4 — RULE-9 enforced.** No imports from ai-runtime-layer, output-control-layer, governance-layer, control-plane-layer, or brand-intelligence.
+
+**I-5 — No `@brandos/auth` re-exports from `src/index.ts`.** Enforced by `__tests__/unit/dependencyBoundary.test.ts`.
+
+**I-6 — Shell components use `usePLAuth()`, not `useAuth()`.** Auth state is injected via `PLAuthContext`.
+
+**I-7 — Props carry all data.** Renderers receive `ArtifactV2` as a prop.
+
+---
+
+## Safe Changes
+
+- Bug fixes in renderer display logic
+- New display features in existing renderers
+- New components in `src/controls/` or `src/shells/`
+- Extending `IPLAuthContext` with new optional fields (if shell components need more auth data)
+
+---
+
+## Dangerous Changes
+
+- Changing `CarouselRendererProps`, `DeckRendererProps`, `ReportRendererProps` shapes
+- Removing any exported component
+- Re-adding `@brandos/auth` to `package.json` or re-adding auth re-exports to `src/index.ts`
+- Changing `IPLAuthContext` shape (apps/web `PLAuthBridge` implements this)
+- Changing `RendererRegistry` API
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest + React Testing Library
+**Location:** `src/__tests__/`
+
+Required:
+- `unit/dependencyBoundary.test.ts` — no forbidden imports + `src/index.ts` does not re-export `@brandos/auth` symbols
+- `renderers/CarouselRenderer.test.tsx` — renders slides correctly, handles empty state
+- `renderers/DeckRenderer.test.tsx`
+- `renderers/ReportRenderer.test.tsx`
+- `generation/GenerationProgressDisplay.test.tsx`
+- `validatePackage.test.ts`
+
+---
+
+## Known Technical Debt
+
+- No visual regression tests (no Storybook or Playwright visual snapshots).
+- `RendererRegistry` is not auto-populated on import — requires explicit bootstrap call in `apps/web`.
+
+---
+
+## Current Migration Status
+
+**Cleanup Sprint 2 WS1 (Complete):**
+- `@brandos/auth` removed from `package.json` dependencies
+- All `@brandos/auth` re-exports removed from `src/index.ts`
+- `src/auth/PLAuthContext.tsx` added: `IPLAuthContext`, `PLAuthProvider`, `usePLAuth()`
+- `WorkspaceShell` and `AdminShell` updated to call `usePLAuth()` instead of `useAuth()`
+- `IPackage.ts` updated to document the change
+- `__tests__/unit/dependencyBoundary.test.ts` updated with new assertion for no auth re-exports
+
+---
+
+## Agent Instructions
+
+1. Read this file.
+2. Read `src/IPresentationLayer.ts` — the contract.
+3. Confirm your change has no imports from forbidden packages.
+4. All new interactive components must have `'use client'`.
+5. Do NOT add `@brandos/auth` back to `package.json`.
+6. Do NOT add auth symbol re-exports to `src/index.ts`.
+7. If shell components need new auth fields, extend `IPLAuthContext` and update `PLAuthBridge` in `apps/web`.
+8. Run `pnpm test` — the boundary test will catch auth re-exports immediately.

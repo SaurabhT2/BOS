@@ -1,0 +1,411 @@
+{
+  "_meta": {
+    "generated": "2026-07-02 11:05:18 UTC",
+    "generator": "scripts/generate-dependency-impact.mjs",
+    "purpose": "Blast-radius lookup: what breaks, and how badly, if a given package changes — derived from the existing package dependency graph, ALLOWED_SAME_LEVEL_PAIRS, and TABLE_OWNERSHIP (no duplicated source of truth).",
+    "authoritySources": [
+      "scripts/shared/package-registry.mjs",
+      "packages/*/package.json",
+      "scripts/shared/table-ownership.mjs"
+    ],
+    "methodology": {
+      "transitiveConsumers": "BFS closure over the \"is imported by\" relation (direct + indirect). Answers: who needs to be retested if this package's exported contract changes?",
+      "affectedPackages": "transitiveConsumers, plus same-tier ALLOWED_SAME_LEVEL_PAIRS peers, plus packages that read/write a table this package owns without importing it. Answers: who could be operationally affected even without a direct import edge?",
+      "riskLevel": "score = 2 * transitiveConsumerCount + 1 * directDependencyCount + (10 if isRoutingChokepoint). Buckets: critical >= 20, high >= 10, medium >= 4, else low.",
+      "isRoutingChokepoint": "true if apps/web route files are allowed to import this package directly (it is not in FORBIDDEN_IN_ROUTES) AND it transitively depends on a package that route files are forbidden from importing directly — i.e. it is the only path apps/web has to that capability, regardless of how many packages formally list it as a dependency. Always false for app packages themselves (the concept describes a library's relationship to the app, not the app's relationship to itself)."
+    },
+    "packageCount": 16
+  },
+  "packages": {
+    "@brandos/contracts": {
+      "directConsumers": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-engine-layer",
+        "@brandos/auth",
+        "@brandos/brand-intelligence",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-config",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/shared-utils",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-engine-layer",
+        "@brandos/auth",
+        "@brandos/brand-intelligence",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-config",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/shared-utils",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-engine-layer",
+        "@brandos/auth",
+        "@brandos/brand-intelligence",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-config",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/shared-utils",
+        "@brandos/web"
+      ],
+      "riskLevel": "critical",
+      "riskFactors": {
+        "transitiveConsumerCount": 13,
+        "directDependencyCount": 0,
+        "isRoutingChokepoint": false,
+        "score": 26
+      }
+    },
+    "@brandos/shared-utils": {
+      "directConsumers": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/web"
+      ],
+      "riskLevel": "high",
+      "riskFactors": {
+        "transitiveConsumerCount": 9,
+        "directDependencyCount": 1,
+        "isRoutingChokepoint": false,
+        "score": 19
+      }
+    },
+    "@brandos/auth": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/runtime-config",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/runtime-config",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/brand-intelligence",
+        "@brandos/control-plane-layer",
+        "@brandos/runtime-config",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 3,
+        "directDependencyCount": 1,
+        "isRoutingChokepoint": false,
+        "score": 7
+      }
+    },
+    "@brandos/runtime-config": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 2,
+        "directDependencyCount": 3,
+        "isRoutingChokepoint": false,
+        "score": 7
+      }
+    },
+    "@brandos/governance-config": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/web"
+      ],
+      "riskLevel": "high",
+      "riskFactors": {
+        "transitiveConsumerCount": 5,
+        "directDependencyCount": 1,
+        "isRoutingChokepoint": false,
+        "score": 11
+      }
+    },
+    "@brandos/artifact-config": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 2,
+        "directDependencyCount": 0,
+        "isRoutingChokepoint": false,
+        "score": 4
+      }
+    },
+    "@brandos/ui-admin": {
+      "directConsumers": [
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/web"
+      ],
+      "riskLevel": "low",
+      "riskFactors": {
+        "transitiveConsumerCount": 1,
+        "directDependencyCount": 0,
+        "isRoutingChokepoint": false,
+        "score": 2
+      }
+    },
+    "@brandos/ai-runtime-layer": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 2,
+        "directDependencyCount": 2,
+        "isRoutingChokepoint": false,
+        "score": 6
+      }
+    },
+    "@brandos/output-control-layer": {
+      "directConsumers": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 3,
+        "directDependencyCount": 2,
+        "isRoutingChokepoint": false,
+        "score": 8
+      }
+    },
+    "@brandos/governance-layer": {
+      "directConsumers": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/artifact-engine-layer",
+        "@brandos/control-plane-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 3,
+        "directDependencyCount": 3,
+        "isRoutingChokepoint": false,
+        "score": 9
+      }
+    },
+    "@brandos/iskill-runtime": {
+      "directConsumers": [
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/governance-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 1,
+        "directDependencyCount": 3,
+        "isRoutingChokepoint": false,
+        "score": 5
+      }
+    },
+    "@brandos/artifact-engine-layer": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 2,
+        "directDependencyCount": 3,
+        "isRoutingChokepoint": false,
+        "score": 7
+      }
+    },
+    "@brandos/brand-intelligence": {
+      "directConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 2,
+        "directDependencyCount": 1,
+        "isRoutingChokepoint": false,
+        "score": 5
+      }
+    },
+    "@brandos/control-plane-layer": {
+      "directConsumers": [
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/governance-layer",
+        "@brandos/web"
+      ],
+      "riskLevel": "critical",
+      "riskFactors": {
+        "transitiveConsumerCount": 1,
+        "directDependencyCount": 11,
+        "isRoutingChokepoint": true,
+        "score": 23
+      }
+    },
+    "@brandos/presentation-layer": {
+      "directConsumers": [
+        "@brandos/web"
+      ],
+      "transitiveConsumers": [
+        "@brandos/web"
+      ],
+      "affectedPackages": [
+        "@brandos/web"
+      ],
+      "riskLevel": "medium",
+      "riskFactors": {
+        "transitiveConsumerCount": 1,
+        "directDependencyCount": 2,
+        "isRoutingChokepoint": false,
+        "score": 4
+      }
+    },
+    "@brandos/web": {
+      "directConsumers": [],
+      "transitiveConsumers": [],
+      "affectedPackages": [],
+      "riskLevel": "high",
+      "riskFactors": {
+        "transitiveConsumerCount": 0,
+        "directDependencyCount": 15,
+        "isRoutingChokepoint": false,
+        "score": 15
+      }
+    }
+  }
+}

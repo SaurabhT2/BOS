@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/shared-utils" },
+    { "path": "packages/ai-runtime-layer" },
+    { "path": "packages/output-control-layer" },
+    { "path": "packages/governance-layer" },
+    { "path": "packages/iskill-runtime" },
+    { "path": "packages/artifact-engine-layer" },
+    { "path": "packages/identity-layer" },
+    { "path": "packages/control-plane-layer" },
+    { "path": "packages/presentation-layer" }
+  ]
+}
+
+

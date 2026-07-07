@@ -1,0 +1,42 @@
+{
+  "name": "@brandos/output-control-layer",
+  "version": "1.0.0",
+  "description": "OCL \u2014 deterministic compiler bridging LLM output to canonical ArtifactV2",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "health",
+    "interfaces"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "validate": "tsx health/validatePackage.ts",
+    "readiness": "tsx health/readinessScore.ts",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brandos/contracts": "workspace:*",
+    "@brandos/shared-utils": "workspace:*",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^6.0.0",
+    "rimraf": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}

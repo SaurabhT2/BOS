@@ -1,0 +1,31 @@
+{
+  "name": "@brandos/artifact-config",
+  "version": "1.0.0",
+  "description": "Single source of truth for artifact engine configuration",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "rimraf": "^5.0.0",
+    "vitest": "^2.0.5"
+  }
+}
+
+

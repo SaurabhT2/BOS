@@ -1,0 +1,52 @@
+{
+  "name": "brandos-platform",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "build:packages": "turbo build --filter='./packages/*'",
+    "typecheck": "turbo typecheck",
+    "dev": "turbo dev --filter=@brandos/web",
+    "test": "turbo test",
+    "clean": "turbo clean && rimraf node_modules",
+    "clean:dist": "turbo clean",
+    "lint:boundaries": "node scripts/check-boundaries.mjs",
+    "lint:exports": "node scripts/check-exports.mjs",
+    "lint:imports": "node scripts/lint-imports.mjs",
+    "lint:routes": "node scripts/check-route-boundaries.mjs",
+    "lint:circular": "node scripts/check-circular.mjs",
+    "validate": "pnpm check-workspace && pnpm lint:boundaries && pnpm lint:imports && pnpm lint:routes && pnpm lint:exports",
+    "check-workspace": "node scripts/check-workspace.mjs",
+    "runtime:verify": "powershell ./scripts/platform-runtime-verify.ps1",
+    "release:verify": "powershell ./scripts/release-gate.ps1",
+    "brandos:analyze": "tsx scripts/brandos-analyze.ts",
+    "brandos:feature": "tsx scripts/brandos-feature.ts",
+    "brandos:bug": "tsx scripts/brandos-bug.ts",
+    "brandos:plan": "tsx scripts/brandos-plan.ts",
+    "brandos:evolve": "tsx scripts/brandos-evolve.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "@types/ws": "^8.18.1",
+    "pg": "^8.22.0",
+    "rimraf": "^5.0.0",
+    "tsx": "^4.21.0",
+    "turbo": "2.10.0",
+    "typescript": "^6.0.3",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "ws": "^8.20.1",
+    "zod": "^4.4.3"
+  }
+}

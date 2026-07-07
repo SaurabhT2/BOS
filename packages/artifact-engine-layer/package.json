@@ -1,0 +1,39 @@
+{
+  "name": "@brandos/artifact-engine-layer",
+  "version": "1.0.0",
+  "description": "Horizontal artifact compilation, governance, and export orchestration runtime",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brandos/contracts": "workspace:*",
+    "@brandos/output-control-layer": "workspace:*",
+    "@brandos/governance-layer": "workspace:*",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^6.0.0",
+    "rimraf": "^5.0.0"
+  }
+}
+
+

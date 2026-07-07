@@ -1,0 +1,256 @@
+# AGENT_CONTEXT — @brandos/artifact-engine-layer
+
+**Layer:** L5 — Artifact Pipeline  
+**Maturity:** L5 (Autonomous Ecosystem)  
+**Build order position:** 12 of 16
+
+> **HARD NO-TOUCH ZONE:** `engine.ts` and `registry.ts` are read-only for agents.  
+> New artifact types are added via the additive registry pattern only.
+
+---
+
+## Package Purpose
+
+Horizontal artifact orchestration runtime. Owns the canonical compile → govern → repair → export pipeline for every artifact type (carousel, deck, report). Agents never call OCL or governance directly for artifacts — they call this engine.
+
+This package is the single integration point that sequences:
+
+1. OCL compilation (`compile*Artifact()`)
+2. Governance validation (`validate*Artifact()`)
+3. LLM-assisted repair (up to 2 attempts via `runXxxSemanticGovernance()`)
+4. Export (PDF, PPTX, PNG via `remix()` — blocked until Phase 2.6)
+
+---
+
+## Responsibilities
+
+| Concern | Module |
+|---|---|
+| Artifact type registry | `src/registry.ts` — **READ-ONLY** |
+| Engine orchestration | `src/engine.ts` — **READ-ONLY** |
+| Bootstrap: task prompt registration | `src/bootstrap.ts` |
+| Bootstrap: artifact type registration | `src/bootstrap.ts` |
+| AI runtime adapter bridge | `src/ai-runtime-adapter.ts` |
+| Carousel compile + governance adapter | `src/adapters/carousel-adapter.ts` |
+| Deck compile + governance adapter | `src/adapters/deck-adapter.ts` |
+| Report compile + governance adapter | `src/adapters/report-adapter.ts` |
+| Export handlers | `src/export/` |
+| Package metadata | `src/IPackage.ts` |
+| Self-validation | `src/validatePackage.ts` |
+| Capability registry | `src/ArtifactEngineCapabilityRegistry.ts` |
+
+---
+
+## Non-Responsibilities
+
+- AI provider selection or LLM calls (delegates to `ai-runtime-layer` via adapter)
+- Governance rule definitions (delegates to `governance-layer`)
+- Artifact compilation logic (delegates to `output-control-layer`)
+- Persistence (no Supabase)
+- Brand identity resolution (that's `brand-intelligence` + `control-plane-layer`)
+
+---
+
+## Public Contracts
+
+All external consumers import from `@brandos/artifact-engine-layer` only.
+
+```typescript
+import {
+  globalArtifactEngine,        // IArtifactEngine singleton
+  bootstrapArtifactEngine,     // DI wiring + globalThis adapter setup
+  type IArtifactEngine,
+  type ArtifactEngineResult,
+  type ArtifactEngineError,
+  type ArtifactTaskPrompt,
+  type RegisteredArtifactType,
+  ArtifactEngineCapabilityRegistry,
+  artifactEngineCapabilityRegistry,
+  type ArtifactEngineCapabilityKey,
+  validatePackage,
+  type PackageHealthReport,
+  PACKAGE_METADATA,
+} from '@brandos/artifact-engine-layer'
+```
+
+### `IArtifactEngine` interface
+
+```typescript
+interface IArtifactEngine {
+  compileAndGovern(
+    draft: DraftArtifactInput,
+    type: ArtifactTypeId,
+    topic: string,
+    options?: ArtifactEngineOptions
+  ): Promise<ArtifactEngineResult>
+
+  remix(
+    artifact: ArtifactV2,
+    exportFormat: ExportChannelId,
+    options?: RemixOptions
+  ): Promise<RemixResult>               // ⚠️ Throws NotImplemented until Phase 2.6
+
+  availableFormats(): ExportChannelId[] // Returns static list (not registry-dynamic yet)
+}
+```
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | `ArtifactV2`, `DraftArtifactInput`, `ArtifactTypeId`, `IGovernanceFeedback` |
+| `@brandos/output-control-layer` | `compile*Artifact()` functions |
+| `@brandos/governance-layer` | `validate*Artifact()`, `run*SemanticGovernance()` |
+| `@brandos/iskill-runtime` | `IPlatformPluginRegistry` |
+| `@brandos/artifact-config` | `DEFAULT_ARTIFACT_CONFIG`, `ARTIFACT_TYPE_IDS` |
+
+### Forbidden Imports
+
+```
+@brandos/ai-runtime-layer    — accessed only via globalThis.__brandos_runtime_adapter bridge
+@brandos/control-plane-layer — CPL calls this package, not the reverse
+@brandos/brand-intelligence  — brand data injected via contract
+@brandos/auth                — no persistence in artifact engine
+```
+
+---
+
+## Consumers
+
+| Consumer | What they use |
+|---|---|
+| `@brandos/control-plane-layer` | `globalArtifactEngine.compileAndGovern()`, `bootstrapArtifactEngine()` |
+| `apps/web` | `bootstrapArtifactEngine()` in `instrumentation.ts` |
+
+---
+
+## Internal Architecture
+
+```
+src/
+  index.ts
+  engine.ts                             ← ⛔ NO-TOUCH
+  registry.ts                           ← ⛔ NO-TOUCH
+  bootstrap.ts
+  ai-runtime-adapter.ts
+  ArtifactEngineCapabilityRegistry.ts
+  IPackage.ts
+  validatePackage.ts
+  adapters/
+    carousel-adapter.ts
+    deck-adapter.ts
+    report-adapter.ts
+  export/
+    pdf-exporter.ts
+    pptx-exporter.ts
+    png-exporter.ts
+  __tests__/
+    engine.test.ts
+    bootstrap.test.ts
+    validatePackage.test.ts
+    adapters/
+      carousel-adapter.test.ts
+      deck-adapter.test.ts
+      report-adapter.test.ts
+```
+
+### Key execution flow
+
+```
+CPL calls globalArtifactEngine.compileAndGovern(draft, 'carousel', topic)
+  └─ engine.ts routes to registered ArtifactTypeHandler
+       └─ carousel-adapter.ts
+            ├─ assertCompiledArtifact(draft)         ← OCL-first law checkpoint
+            ├─ OCL.compileCarouselArtifact(draft)    → CarouselArtifact
+            ├─ governance.validateCarouselArtifact() → SemanticValidationOutcome
+            ├─ [if invalid]: runCarouselSemanticGovernance(artifact, topic, callLLM)
+            │    └─ repair loop: max 2 attempts
+            └─ ArtifactEngineResult
+```
+
+### globalThis bridge (Fix C1 resolution)
+
+```typescript
+// bootstrap.ts wires at startup:
+globalThis.__brandos_runtime_adapter = {
+  callLLM: (prompt) => callWithMode('generation', { prompt }),
+  registerArtifactPrompt: (type, prompt) => { ARTIFACT_TASK_PROMPTS[type] = prompt },
+}
+```
+
+---
+
+## Invariants
+
+**I-1 — `engine.ts` and `registry.ts` are read-only.** New artifact types are added via `bootstrap.ts` only.
+
+**I-2 — OCL-first law.** `assertCompiledArtifact()` must be called at the entry of every adapter. Governance never receives raw LLM output.
+
+**I-3 — No type branching in `engine.ts`.** Type-specific logic lives in adapters only.
+
+**I-4 — `globalThis.__brandos_runtime_adapter` is the only path to ai-runtime-layer.** No direct import permitted.
+
+**I-5 — Max repair attempts = 2 (default).** Changing the default requires cost/latency analysis.
+
+**I-6 — `remix()` throws `NotImplemented`.** Blocked until Phase 2.6.
+
+**I-7 — `availableFormats()` returns a static list.** Known debt — does not query registry dynamically.
+
+---
+
+## Safe Changes
+
+### Adding a new artifact type (additive pattern — 7 steps)
+
+1. Create `src/adapters/<type>-adapter.ts` implementing `IArtifactTypeHandler`
+2. Add `compile<Type>Artifact()` to `@brandos/output-control-layer`
+3. Add `validate<Type>Artifact()` + `run<Type>SemanticGovernance()` to `@brandos/governance-layer`
+4. Register adapter in `src/bootstrap.ts`
+5. Push task prompt in `bootstrap.ts` via `registerArtifactPrompt('<type>', prompt)`
+6. Add type to `ARTIFACT_TYPE_IDS` in `@brandos/artifact-config`
+7. Add tests in `src/__tests__/adapters/<type>-adapter.test.ts`
+
+---
+
+## Dangerous Changes
+
+- Any modification to `engine.ts` or `registry.ts` — requires human sign-off
+- Changing `bootstrapArtifactEngine()` signature — CPL and `apps/web/instrumentation.ts` both call this
+- Changing `IArtifactEngine` interface — CPL depends on this shape
+- Modifying the `globalThis.__brandos_runtime_adapter` bridge contract
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest  
+**Location:** `src/__tests__/`
+
+Required coverage:
+- `engine.test.ts` — dispatch, type routing, error propagation
+- `bootstrap.test.ts` — adapter registration, task prompt push, bridge wiring
+- `adapters/carousel-adapter.test.ts` — full compile → govern → repair path
+- `adapters/deck-adapter.test.ts`
+- `adapters/report-adapter.test.ts`
+- `validatePackage.test.ts`
+
+---
+
+## Known Technical Debt
+
+- **`remix()` throws `NotImplemented`** — blocked on Phase 2.6.
+- **`availableFormats()` returns static list** — should query registry dynamically.
+- **`globalThis.__brandos_runtime_adapter` bridge** — intermediate pattern, cleaned up post Phase 1.1.
+
+---
+
+## Agent Instructions
+
+Before modifying this package:
+
+1. Read this file entirely.
+2. `engine.ts` and `registry.ts` are OFF LIMITS to edit.
+3. For new artifact types, follow the 7-step additive pattern above.
+4. Run `pnpm test` and `node scripts/check-boundaries.mjs` after any change.

@@ -1,0 +1,284 @@
+# AGENT_CONTEXT — @brandos/output-control-layer
+
+**Layer:** L3b — Runtime Execution
+**Maturity:** L5 (Autonomous Ecosystem)
+**Build order position:** 9 of 16
+**Last updated:** Cleanup Sprint 2 (WS2 governance-config decoupling, WS3 PersonaContributor cleanup)
+
+> Stateless. Deterministic. No LLM calls. No DB access. No governance-config imports.
+
+---
+
+## Package Purpose
+
+Stateless, deterministic hybrid compiler. Bridges the gap between raw LLM output and canonical `ArtifactV2`. Has exactly four responsibilities:
+
+1. **PRE-GENERATION** — `ContractAssemblerFactory` + Contributors → `ResolvedGenerationContract`
+2. **PRE-GENERATION** — `compilePromptFromContract()` → `CompiledPrompt { system, user }`
+3. **POST-GENERATION** — `normalizeOutput()` → `NormalizedOutput`
+4. **POST-GENERATION** — `compile*Artifact()` → canonical `ArtifactV2`
+
+---
+
+## Responsibilities
+
+| Responsibility | Entry Point |
+|---|---|
+| Assemble generation contract | `ContractAssemblerFactory.create().assemble(context)` |
+| Compile prompt from contract | `compilePromptFromContract(contract)` |
+| Normalize raw LLM output | `normalizeOutput(input, options)` |
+| Compile carousel artifact | `compileCarouselArtifact(draft)` |
+| Compile deck artifact | `compileDeckArtifact(draft)` |
+| Compile report artifact | `compileReportArtifact(draft)` |
+| Detect weak output | `detectRichness(draft)` |
+| Adapt weak output | `adaptWeakOutput(draft, richness)` |
+
+---
+
+## Non-Responsibilities
+
+- Make LLM calls
+- Access the database
+- Apply governance rules
+- Define or evaluate policy thresholds
+- Own structural constraint values (these come from `@brandos/contracts`)
+
+---
+
+## Allowed Imports
+
+```
+@brandos/contracts    ← ONLY permitted @brandos/* import for structural constraints and types
+@brandos/shared-utils ← repairJSON, extractJSON (Fix C2 migration)
+uuid                  ← artifact ID generation
+```
+
+**No `@brandos/governance-config`. No `@brandos/brand-intelligence`. No `@brandos/control-plane-layer`. No `@supabase/*`. No `express`. No `next`.**
+
+### Cleanup Sprint 2 WS2: governance-config decoupling
+
+Previously, OCL imported `CAROUSEL_STRUCTURAL_CONSTRAINTS` from `@brandos/governance-config`. This created a coupling that made OCL's test isolation harder and tightly bound it to governance policy churn.
+
+The structural constraint constants (`CAROUSEL/DECK/REPORT_STRUCTURAL_CONSTRAINTS`) are now canonical in `@brandos/contracts`. OCL imports exclusively from there.
+
+**Enforcement:** `tests/boundary/dependencyBoundary.test.ts` — fails CI if any file in `src/` imports from `@brandos/governance-config` or `@brandos/brand-intelligence`.
+
+```typescript
+// ✅ CORRECT (Cleanup Sprint 2 WS2)
+import { CAROUSEL_STRUCTURAL_CONSTRAINTS } from '@brandos/contracts'
+
+// ❌ FORBIDDEN
+import { CAROUSEL_STRUCTURAL_CONSTRAINTS } from '@brandos/governance-config'
+```
+
+---
+
+## Cleanup Sprint 2 WS3: PersonaContributor fully self-contained
+
+Previously, `PersonaContributor` included a transition-period delegation shim to `BI.resolvePersonaContribution()`. This shim is now removed.
+
+`PersonaContributor` owns inline persona → `IPersonaContribution` assembly with no BI delegation. `resolvePersonaContribution` no longer exists on `IBrandRuntimeServices` (removed from `@brandos/contracts` in WS3).
+
+```typescript
+// ✅ CURRENT — PersonaContributor assembles inline
+// personas → brandVoice → IPersonaContribution fields (tone, voice, audience, etc.)
+
+// ❌ REMOVED — no longer calls:
+// context.brandIntelligenceRuntime.resolvePersonaContribution(...)
+```
+
+---
+
+## Public Contracts
+
+Import from `@brandos/output-control-layer` only. No subpath imports.
+
+```typescript
+// Post-generation: normalization + compilation
+normalizeOutput, cleanOutput
+compileCarouselArtifact, compileDeckArtifact, compileReportArtifact
+transformToCarouselSchema, transformToDeckSchema, transformToReportSchema
+detectRichness, adaptWeakOutput, richPassthrough
+repairWithLLM   // accepts injected callLLM callback
+
+// Pre-generation: contract assembly
+ContractAssemblerFactory   // preferred: .create()
+ContractAssembler
+getContractAssembler()     // legacy singleton — prefer ContractAssemblerFactory
+IdentityContributor, PersonaContributor, IntentContributor, ArtifactContributor, RuntimeContributor
+
+// Pre-generation: prompt compilation
+compilePromptFromContract
+
+// Parsing utilities
+parseArtifact, parseArtifactJSON, validateArtifactFields
+
+// Backward-compat re-exports (prefer @brandos/shared-utils for new code)
+repairJSON, extractJSON
+```
+
+---
+
+## Dependencies
+
+| Package | Reason |
+|---|---|
+| `@brandos/contracts` | Artifact types, generation contract interfaces, `NormalizedOutput`, **`CAROUSEL/DECK/REPORT_STRUCTURAL_CONSTRAINTS`** |
+| `@brandos/shared-utils` | `repairJSON`, `extractJSON` (Fix C2) |
+| `uuid` | Artifact ID generation |
+
+**Removed (Cleanup Sprint 2 WS2):** `@brandos/governance-config`
+
+---
+
+## Consumers
+
+| Consumer | What they use |
+|---|---|
+| `@brandos/control-plane-layer` | `ContractAssemblerFactory`, `compilePromptFromContract`, `normalizeOutput` |
+| `@brandos/artifact-engine-layer` | `compile*Artifact()`, artifact task prompts |
+
+`apps/web` must NOT import OCL directly — all generation goes through CPL.
+
+---
+
+## Internal Architecture
+
+```
+src/
+  index.ts
+  output-normalizer/
+    normalizeOutput.ts
+    parser/
+      parseArtifact.ts
+    pipeline/
+      cleanOutput.ts
+      extractJSON.ts
+      repairJSON.ts
+      transformPipeline.ts
+  artifact-compiler/
+    compilers/
+      carouselCompiler.ts     ← imports CAROUSEL_STRUCTURAL_CONSTRAINTS from @brandos/contracts
+      deckCompiler.ts
+      reportCompiler.ts
+    adapters/
+      normalizeCarouselText.ts
+      weakModelAdapter.ts
+    transformers/
+      transformToCarouselSchema.ts
+      transformToDeckSchema.ts
+      transformToReportSchema.ts
+    utils/
+      coerce.ts, inferRoleFromIndex.ts, normalizeRawSlideObject.ts
+  prompt-compiler/
+    index.ts
+    compilePromptFromContract.ts
+    buildIdentitySection.v2.ts
+  contract-assembler/
+    index.ts
+    ContractAssembler.ts      ← imports CAROUSEL_STRUCTURAL_CONSTRAINTS from @brandos/contracts
+    ContractAssemblerFactory.ts
+    contributors/
+      IdentityContributor.ts
+      PersonaContributor.ts   ← fully self-contained (Cleanup Sprint 2 WS3)
+      IntentContributor.ts
+      ArtifactContributor.ts  ← imports STRUCTURAL_CONSTRAINTS from @brandos/contracts
+      RuntimeContributor.ts
+tests/
+  boundary/
+    dependencyBoundary.test.ts  ← NEW (Cleanup Sprint 2 WS2) — enforces no governance-config import
+  integration/
+    fullPipeline.test.ts
+    normalizeOutput.test.ts
+  unit/
+    cleanOutput.test.ts, extractJSON.test.ts, repairJSON.test.ts
+    parseArtifact.test.ts, promptEvolution.test.ts
+    contractAssembly.test.ts, intelligencePropagation.test.ts
+    weakModelAdapter.test.ts
+  mutation/
+    invalidInputs.test.ts
+  contracts/
+    contributors.test.ts
+```
+
+---
+
+## Invariants
+
+**I-1 — Stateless and deterministic.** Same input → same output always.
+
+**I-2 — No LLM calls in the compile path.** Only `repairWithLLM()` accepts an injected callback.
+
+**I-3 — Structural constraints from `@brandos/contracts` only.** Never import from `@brandos/governance-config`. Enforced by boundary test.
+
+**I-4 — `@brandos/brand-intelligence` is FORBIDDEN.** RULE-2 + RULE-6 + OCL boundary test.
+
+**I-5 — OCL is upstream of governance.** Governance always receives compiled `ArtifactV2`.
+
+**I-6 — `PersonaContributor` owns persona assembly.** No BI delegation. No BI imports.
+
+**I-7 — `ContractAssemblerFactory.create()` is preferred.** `getContractAssembler()` is legacy.
+
+**I-8 — Contributors are independent.** Each receives the same `ContributorContext`, produces its own independent slice.
+
+---
+
+## Safe Changes
+
+- Bug fixes in existing compilers (with regression tests)
+- Improving `cleanOutput()` patterns (additive)
+- Adding a new Contributor (new file in `contract-assembler/contributors/`)
+- Bug fixes to JSON repair/extraction heuristics
+- Improving prompt compilation templates
+
+---
+
+## Dangerous Changes
+
+- Changing `ResolvedGenerationContract` shape (coordinate with `@brandos/contracts`)
+- Changing `compile*Artifact()` output shape (breaks artifact-engine-layer)
+- Changing `normalizeOutput()` pipeline order
+- Adding any `@brandos/*` import beyond `contracts` and `shared-utils`
+- Modifying `PersonaContributor` logic for persona assembly
+
+---
+
+## Test Strategy
+
+**Test runner:** Vitest
+**Location:** `tests/`
+
+Critical:
+- `tests/boundary/dependencyBoundary.test.ts` — verifies no `@brandos/governance-config` or `@brandos/brand-intelligence` imports exist in `src/`
+- `tests/contracts/contributors.test.ts` — each contributor produces correct slice
+- `tests/integration/fullPipeline.test.ts` — end-to-end: contract → prompt → normalize → compile
+- `tests/unit/weakModelAdapter.test.ts` — detectRichness + adaptWeakOutput
+
+---
+
+## Known Technical Debt
+
+- `getContractAssembler()` singleton accessor is legacy. Remove once all callers use `ContractAssemblerFactory.create()`.
+- `repairJSON`/`extractJSON` backward-compat re-exports. Remove once all callers import from `@brandos/shared-utils`.
+
+---
+
+## Current Migration Status
+
+**Fix C2 (Complete):** `repairJSON`/`extractJSON` canonical in `@brandos/shared-utils`. OCL re-exports for backward compat.
+
+**Fix G2 (Complete):** PersonaContributor owns persona assembly.
+
+**Cleanup Sprint 2 WS2 (Complete):** `@brandos/governance-config` removed from dependencies. Structural constraints imported from `@brandos/contracts`. Boundary test added.
+
+**Cleanup Sprint 2 WS3 (Complete):** PersonaContributor BI delegation shim removed. Fully self-contained.
+
+---
+
+## Agent Instructions
+
+1. Read this file.
+2. Confirm any new `@brandos/*` imports are limited to `@brandos/contracts` and `@brandos/shared-utils`.
+3. Run `pnpm test` — the boundary test will catch governance-config or BI imports immediately.
+4. Run `node scripts/check-boundaries.mjs` from repo root.
+5. If modifying `PersonaContributor`, ensure it remains stateless and has no BI imports.

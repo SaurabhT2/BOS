@@ -1,0 +1,345 @@
+# .github/workflows/release-gate.yml
+#
+# BrandOS Release Gate CI
+#
+# Implements Deliverable 5 from reports/verification-platform-design.md.
+#
+# Jobs:
+#   static-and-contract  — Stage 1 + Stage 2 (no secrets required)
+#   runtime-verification — Stage 3 (requires release-verification environment)
+#   release-gate         — Aggregates all stages; blocks on FAIL
+#
+# Merge gate: static-and-contract must pass before merge to main/release/*.
+# Tag gate:   release-gate must pass before any tag on main.
+#
+# Reports are archived as build artifacts (90-day retention).
+
+name: Release Gate
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+  pull_request:
+    branches:
+      - main
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      skip_runtime:
+        description: "Skip runtime verification (no live environment)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ── Stage 1 + Stage 2: Static and Contract Verification ────────────────────
+  static-and-contract:
+    name: "Repository + Architecture Verification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Stage 1 — Repository Health (platform-verify.ps1)
+        shell: pwsh
+        run: |
+          .\scripts\platform-verify.ps1
+        continue-on-error: false
+
+      - name: Stage 2 — Architecture Health (platform-architecture-verify.ps1)
+        shell: pwsh
+        run: |
+          .\scripts\platform-architecture-verify.ps1
+        continue-on-error: false
+
+      - name: Upload architecture reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-reports-${{ github.run_id }}
+          path: |
+            reports/ownership-audit.md
+            reports/runtime-v1-v2-audit.md
+          retention-days: 90
+          if-no-files-found: warn
+
+  # ── Stage 3: Runtime Verification ──────────────────────────────────────────
+  runtime-verification:
+    name: "Runtime Verification"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: static-and-contract
+    # Only run if secrets environment is available (skipped on forks / non-release PRs)
+    environment: release-verification
+    if: >
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.skip_runtime == 'false'
+    continue-on-error: true  # WARN doesn't block merge; release-gate job makes the final call
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY:   ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY:       ${{ secrets.SUPABASE_SERVICE_KEY }}
+      ANTHROPIC_API_KEY:               ${{ secrets.ANTHROPIC_API_KEY }}
+      BRANDOS_BASE_URL:                ${{ secrets.BRANDOS_STAGING_URL }}
+      # Runtime Verification V2 — Internal Verification API.
+      # This is the ONLY required runtime-verify secret. It must be set to the
+      # same value as the deployed BrandOS instance's BRANDOS_RUNTIME_VERIFY_SECRET
+      # env var — configured once in this environment's secrets, never extracted
+      # from a browser session.
+      BRANDOS_RUNTIME_VERIFY_SECRET:        ${{ secrets.BRANDOS_RUNTIME_VERIFY_SECRET }}
+      # Optional — verify a specific real workspace instead of the
+      # self-provisioning fixture. Leave unset to use the zero-config default.
+      BRANDOS_RUNTIME_VERIFY_WORKSPACE_ID:  ${{ secrets.BRANDOS_RUNTIME_VERIFY_WORKSPACE_ID }}
+      BRANDOS_RUNTIME_VERIFY_USER_ID:       ${{ secrets.BRANDOS_RUNTIME_VERIFY_USER_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stage 3 — Runtime Health (platform-runtime-verify.ps1)
+        id: runtime_verify
+        shell: pwsh
+        run: |
+          $exitCode = 0
+          try {
+            $rtArgs = @(
+              "-BaseUrl",      $env:BRANDOS_BASE_URL,
+              "-VerifySecret", $env:BRANDOS_RUNTIME_VERIFY_SECRET
+            )
+            if ($env:BRANDOS_RUNTIME_VERIFY_WORKSPACE_ID) { $rtArgs += @("-WorkspaceId", $env:BRANDOS_RUNTIME_VERIFY_WORKSPACE_ID) }
+            if ($env:BRANDOS_RUNTIME_VERIFY_USER_ID)      { $rtArgs += @("-UserId", $env:BRANDOS_RUNTIME_VERIFY_USER_ID) }
+            .\scripts\platform-runtime-verify.ps1 @rtArgs
+            $exitCode = $LASTEXITCODE
+          } catch {
+            Write-Host "Runtime verify threw: $_" -ForegroundColor Yellow
+            $exitCode = 2
+          }
+          # Translate exit code to output for aggregation job
+          $label = switch ($exitCode) { 0 { "PASS" }; 1 { "FAIL" }; 2 { "WARN" }; default { "WARN" } }
+          echo "result=$label" >> $env:GITHUB_OUTPUT
+          echo "exit_code=$exitCode" >> $env:GITHUB_OUTPUT
+          exit $exitCode
+
+      - name: Upload runtime reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-reports-${{ github.run_id }}
+          path: |
+            reports/runtime-verification.md
+            reports/provider-propagation.md
+            reports/model-propagation.md
+            reports/governance-audit.md
+            reports/persistence-audit.md
+            reports/semantic-verification.md
+          retention-days: 90
+          if-no-files-found: warn
+
+  # ── Release Gate: Aggregate all stages ─────────────────────────────────────
+  release-gate:
+    name: "Release Gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [static-and-contract, runtime-verification]
+    if: always()  # run even if runtime-verification was skipped
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download architecture reports
+        uses: actions/download-artifact@v4
+        with:
+          name: architecture-reports-${{ github.run_id }}
+          path: reports/
+        continue-on-error: true
+
+      - name: Download runtime reports
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-reports-${{ github.run_id }}
+          path: reports/
+        continue-on-error: true
+
+      - name: Evaluate release gate decision
+        id: gate
+        shell: pwsh
+        run: |
+          $stage1 = "${{ needs.static-and-contract.result }}"
+          $stage3 = "${{ needs.runtime-verification.result }}"
+
+          # Map GitHub job results to gate results
+          # static-and-contract: success=PASS, failure=FAIL, cancelled=FAIL
+          $s1Result = switch ($stage1) {
+            "success"   { "PASS" }
+            "failure"   { "FAIL" }
+            "cancelled" { "FAIL" }
+            default     { "FAIL" }
+          }
+
+          # runtime-verification: success=PASS, failure=FAIL, skipped=WARN, cancelled=WARN
+          $s3Result = switch ($stage3) {
+            "success"   { "PASS" }
+            "failure"   { "FAIL" }
+            "skipped"   { "WARN" }
+            "cancelled" { "WARN" }
+            default     { "WARN" }
+          }
+
+          # S2 is part of the static-and-contract job; if that passed, both S1+S2 passed
+          $s2Result = $s1Result
+
+          Write-Host ""
+          Write-Host "══════════════════════════════════════════════════════════════"
+          Write-Host "  BrandOS Release Gate — ${{ github.sha }}"
+          Write-Host "══════════════════════════════════════════════════════════════"
+          Write-Host ("  Repository Health    {0}" -f $s1Result)
+          Write-Host ("  Architecture Health  {0}" -f $s2Result)
+          Write-Host ("  Runtime Health       {0}" -f $s3Result)
+          Write-Host "──────────────────────────────────────────────────────────────"
+
+          if ($s1Result -eq "FAIL" -or $s2Result -eq "FAIL" -or $s3Result -eq "FAIL") {
+            $gate = "FAIL"
+          } elseif ($s1Result -eq "WARN" -or $s2Result -eq "WARN" -or $s3Result -eq "WARN") {
+            $gate = "WARN"
+          } else {
+            $gate = "PASS"
+          }
+
+          Write-Host ("  Release Gate Result: {0}" -f $gate)
+          Write-Host "══════════════════════════════════════════════════════════════"
+          Write-Host ""
+
+          echo "gate_result=$gate" >> $env:GITHUB_OUTPUT
+          echo "s1=$s1Result"      >> $env:GITHUB_OUTPUT
+          echo "s2=$s2Result"      >> $env:GITHUB_OUTPUT
+          echo "s3=$s3Result"      >> $env:GITHUB_OUTPUT
+
+          # Exit codes mirror release-gate.ps1
+          switch ($gate) {
+            "PASS" { exit 0 }
+            "WARN" { exit 2 }  # non-zero so humans see it; doesn't block merge
+            "FAIL" { exit 1 }
+          }
+        continue-on-error: false
+
+      - name: Write release-readiness report
+        if: always()
+        shell: pwsh
+        run: |
+          $timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
+          $gate  = "${{ steps.gate.outputs.gate_result }}"
+          $s1    = "${{ steps.gate.outputs.s1 }}"
+          $s2    = "${{ steps.gate.outputs.s2 }}"
+          $s3    = "${{ steps.gate.outputs.s3 }}"
+          $sha   = "${{ github.sha }}"
+          $ref   = "${{ github.ref }}"
+          $runId = "${{ github.run_id }}"
+
+          $action = switch ($gate) {
+            "PASS" { "None — packaging cleared." }
+            "WARN" { "Human sign-off required. Review reports and approve manually." }
+            "FAIL" { "Packaging BLOCKED. Fix all FAIL findings before proceeding." }
+          }
+
+          $emoji = switch ($gate) { "PASS" { "✅" }; "WARN" { "⚠️" }; "FAIL" { "❌" } }
+
+          New-Item -ItemType Directory -Path reports/ -Force | Out-Null
+
+          Set-Content reports/release-readiness.md @"
+          # Release Readiness Report
+
+          > Generated: $timestamp
+          > Commit: $sha
+          > Ref: $ref
+          > Run: $runId
+
+          ## Stage Results
+
+          | Stage | Result |
+          |---|---|
+          | Repository Health (Stage 1) | $s1 |
+          | Architecture Health (Stage 2) | $s2 |
+          | Runtime Health (Stage 3) | $s3 |
+
+          ## Release Gate Decision
+
+          $emoji **$gate**
+
+          **Action required:** $action
+
+          ## Reports
+
+          - reports/ownership-audit.md
+          - reports/runtime-v1-v2-audit.md
+          - reports/runtime-verification.md
+          - reports/provider-propagation.md
+          - reports/model-propagation.md
+          - reports/governance-audit.md
+          - reports/persistence-audit.md
+          - reports/semantic-verification.md
+
+          ## Status
+
+          $gate
+          "@
+
+      - name: Upload release-readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-readiness-${{ github.run_id }}
+          path: reports/release-readiness.md
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Block merge on FAIL
+        if: steps.gate.outputs.gate_result == 'FAIL'
+        run: |
+          echo "::error::Release gate FAILED. Review reports/release-readiness.md and fix all FAIL findings."
+          exit 1
