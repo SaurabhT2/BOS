@@ -13,6 +13,7 @@ import {
   readFileSync, existsSync, mkdirSync, readdirSync, statSync,
 } from 'fs';
 import { join } from 'path';
+import { isInternalPackage } from './package-registry.mjs';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 
@@ -61,11 +62,18 @@ export function walkSourceFiles(dir) {
 
 // ── Import extraction ─────────────────────────────────────────────────────────
 
-/** Extract all @brandos/* imports from a TypeScript file, normalised to package name. */
+/**
+ * Extract all internal-scope (@brandos/*, @platform/*) imports from a
+ * TypeScript file, normalised to package name.
+ *
+ * v3 fix: was hardcoded to `@brandos\/` only, silently blind to
+ * @platform/cognition-contract imports. Now matches any recognized scope
+ * (scripts/shared/package-registry.mjs::RECOGNIZED_SCOPES).
+ */
 export function getBrandosImports(filePath) {
   const src = readFileSafe(filePath);
   const imports = new Set();
-  const re = /from\s+['"](@brandos\/[^'"]+)['"]/g;
+  const re = /from\s+['"](@brandos\/[^'"]+|@platform\/[^'"]+)['"]/g;
   let m;
   while ((m = re.exec(src)) !== null) {
     imports.add(m[1].split('/').slice(0, 2).join('/'));
@@ -73,10 +81,16 @@ export function getBrandosImports(filePath) {
   return [...imports];
 }
 
-/** Extract @brandos/* deps from a package.json object (deps + devDeps, not peers). */
+/**
+ * Extract internal-scope deps from a package.json object (deps + devDeps,
+ * not peers).
+ *
+ * v3 fix: was `k.startsWith('@brandos/')` only — same @platform/ blind spot
+ * as getBrandosImports() above. Now derives from RECOGNIZED_SCOPES.
+ */
 export function getBrandosDeps(pkgJson) {
   const all = { ...(pkgJson.dependencies ?? {}), ...(pkgJson.devDependencies ?? {}) };
-  return Object.keys(all).filter(k => k.startsWith('@brandos/'));
+  return Object.keys(all).filter(isInternalPackage);
 }
 
 // ── Public export extraction from src/index.ts ────────────────────────────────

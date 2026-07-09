@@ -22,6 +22,7 @@ import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { ensureDir, renderTimestamp } from './shared/context-utils.mjs';
 import { LAYER_TIERS, KNOWN_PACKAGES, FORBIDDEN_IN_ROUTES } from './shared/package-registry.mjs';
+import { TABLE_OWNERSHIP } from './shared/table-ownership.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT      = resolve(join(__dirname, '..'));
@@ -133,16 +134,32 @@ ${layerRows}
 
 ---
 
-## Brand Intelligence
+## Cognition Platform Integration
 
-| Component | Table | Role |
-|---|---|---|
-| Memory store | \`brand_memory_entries\` | Learned brand signals, classified and decay-tracked |
-| Identity signals | \`identity_signals\` | Per-dimension weighted confidence signals |
-| Identity versions | \`identity_versions\` | Snapshot history of resolved brand identity |
+BrandOS no longer performs cognition in-process. \`@brandos/brand-intelligence\`
+was deleted in the BrandOS / IntelligenceOS platform split; its replacement,
+\`@brandos/cognition-client\` (L6), is a stateless HTTP adapter to the
+IntelligenceOS platform (separate repository), brokered by \`@platform/cognition-contract\`.
 
-Owner: **\`@brandos/brand-intelligence\`** (L6)
-Consumer access: CPL proxy functions only (Rule 8)
+| Component | Role |
+|---|---|
+| \`@brandos/cognition-client\` | HTTP adapter — resolveCognitionContext / observe / review / summarizeCognition / checkHealth |
+| \`@platform/cognition-contract\` | Shared contract types (\`CognitionContext\`, \`CognitionProvider\`) — physically duplicated in both repos pending registry publication |
+| IntelligenceOS \`apps/api\` | Receiving end of the HTTP call (separate repository) |
+
+Consumer access: CPL proxy functions only (RULE-1) — \`getBrandMemory()\`,
+\`recordBrandMemoryObservation()\`, \`reviewBrandMemorySignal()\`,
+\`resolveBrandCognitionContext()\`, \`getBrandSummary()\`,
+\`ingestWorkspaceKnowledgeAsset()\` (in \`@brandos/control-plane-layer/src/brand-memory/service.ts\`
+and \`knowledge/service.ts\`).
+
+${Object.entries(TABLE_OWNERSHIP).filter(([, i]) => i.orphaned).length > 0 ? `
+### ⚠️ Orphaned tables (former Brand Intelligence data, no current writer)
+
+${Object.entries(TABLE_OWNERSHIP).filter(([, i]) => i.orphaned).map(([t, i]) =>
+  `- \`${t}\` — formerly owned by \`${i.formerOwner}\` (deleted). Requires a human decision: archive-and-drop, or migrate once into IntelligenceOS as historical seed data.`
+).join('\n')}
+` : ''}
 
 ---
 
@@ -199,13 +216,12 @@ Owner: **\`@brandos/control-plane-layer\`** (orchestration) + **\`@brandos/gover
 
 | Rule | One-line summary |
 |---|---|
-| RULE-1 | \`apps/web\` → no \`@brandos/brand-intelligence\` — use CPL proxies |
-| RULE-2 | \`@brandos/output-control-layer\` → no \`@brandos/brand-intelligence\` |
-| RULE-3 | \`@brandos/control-plane-layer\` → BI allowlist symbols only |
+| RULE-1 | \`apps/web\` → no \`@brandos/cognition-client\` (except bootstrap in instrumentation.ts) — use CPL proxies |
+| RULE-2 | \`@brandos/output-control-layer\` → no \`@brandos/cognition-client\` |
+| RULE-3 | \`@brandos/control-plane-layer\` → cognition-client allowlist symbols only |
 | RULE-4 | \`@brandos/ai-runtime-layer\` → no \`@brandos/output-control-layer\` |
 | RULE-5 | \`@brandos/governance-layer\` → no \`@brandos/output-control-layer\` |
-| RULE-6 | CPL → no concrete BI repo classes (use factory) |
-| RULE-7 | CPL → no BrandIntelligenceRuntime concrete class (use factory) |
+| RULE-6/7 | *(retired — folded into RULE-3's allowlist)* |
 | OCL-GC | \`@brandos/output-control-layer\` → no \`@brandos/governance-config\` |
 | PL-AUTH | \`@brandos/presentation-layer\` → no auth re-exports from index.ts |
 | ROUTES | Route files → forbidden: ${FORBIDDEN_IN_ROUTES.map(p => `\`${p}\``).join(', ')} |
@@ -218,12 +234,12 @@ Owner: **\`@brandos/control-plane-layer\`** (orchestration) + **\`@brandos/gover
 apps/web API route
   → runControlPlane(request)           [@brandos/control-plane-layer]
     → CPLOrchestrator.orchestrate()
-      → resolveBrandCognitionContext()  [CPL proxy → BI]
+      → resolveBrandCognitionContext()  [CPL proxy → cognition-client → HTTP → IntelligenceOS]
       → ContractAssemblerFactory        [@brandos/output-control-layer]
       → compilePromptFromContract()     [@brandos/output-control-layer]
       → callWithMode()                  [@brandos/ai-runtime-layer]
       → executeArtifactPipeline()       [@brandos/artifact-engine-layer]  (structured only)
-  → recordBrandMemoryObservation()     [CPL proxy → BI, fire-and-forget]
+  → recordBrandMemoryObservation()     [CPL proxy → cognition-client, fire-and-forget]
 \`\`\`
 
 ---
@@ -236,7 +252,8 @@ apps/web API route
 | ISkill Production Gate Removal | Blocked on human gate-lift decision |
 | Telemetry Store | Not started |
 | Auth Type Consolidation | ✅ Complete |
-| Brand Intelligence V1 → V2 | ✅ Complete |
+| Brand Intelligence → IntelligenceOS Platform Split | ✅ Complete (brand-intelligence package deleted; cognition-client + HTTP live) |
+| Cognition Contract Gap Closure (raw-signal review, explicit voice config ingestion) | Open — see cognition-contract/README.md "Known contract gaps" |
 | Cleanup Sprint 1 | ✅ Complete |
 | Cleanup Sprint 2 (WS1+WS2+WS3+BI isolation) | ✅ Complete |
 

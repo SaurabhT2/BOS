@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-07-02 11:05:18 UTC",
+    "generated": "2026-07-09 09:59:52 UTC",
     "generator": "scripts/generate-behavior-contracts.mjs",
     "purpose": "What each major cross-package interaction does — inputs, outputs, failure modes, fallbacks — so an agent can reason about behavior without reading the implementations.",
     "provenance": "Hand-curated from direct source reading (no existing authority records failure-mode/fallback behavior as structured data); each entry carries a live-checked `verification` field so drift in the underlying code is visible on the next regeneration rather than silently going stale.",
@@ -10,28 +10,25 @@
   "contracts": [
     {
       "source": "@brandos/control-plane-layer",
-      "target": "@brandos/brand-intelligence",
-      "contract": "BrandIntelligenceRuntime.resolve()",
+      "target": "@brandos/cognition-client",
+      "contract": "HttpCognitionProvider.resolveCognitionContext() (via getGlobalCognitionClient())",
       "kind": "function-call",
       "callSite": "packages/control-plane-layer/src/orchestrator.ts (CPLOrchestrator.orchestrate(), Step 1)",
-      "targetDefinition": "packages/brand-intelligence/src/runtime/BrandIntelligenceRuntime.ts (resolve())",
+      "targetDefinition": "packages/cognition-client/src/index.ts (getGlobalCognitionClient) -> HTTP POST to IntelligenceOS apps/api (separate repository)",
       "inputs": [
         "workspaceId",
-        "personaId?",
-        "persona?",
-        "brandContext?",
         "taskType?"
       ],
       "outputs": [
-        "IBrandCognitionContext — resolved brand identity + style context for prompt assembly"
+        "CognitionContext — { contractVersion, workspaceId, resolvedAt, confidence, voice, identity, visualIdentity, provenance }"
       ],
       "failureModes": [
-        "BI runtime rejects (e.g. repository read failure, malformed signal data)"
+        "HTTP request to IntelligenceOS fails, times out, or returns an error (network failure, IntelligenceOS outage, malformed response)"
       ],
       "fallbacks": [
-        "CPLOrchestrator wraps the call in try/catch; on rejection it logs a warning and substitutes createDegradedCognitionContext() (imported as a standalone function per RULE-7 — never the concrete BrandIntelligenceRuntime class). Generation continues without resolved brand context rather than failing the request."
+        "CPLOrchestrator wraps the call in try/catch; on rejection it logs a warning and substitutes createDegradedCognitionContext() (a standalone function, never a concrete provider class — RULE-3). Generation continues without resolved cognition context rather than failing the request."
       ],
-      "notes": "A second, equivalent proxy — resolveBrandCognitionContext() in packages/control-plane-layer/src/brand-memory/service.ts — wraps the same getGlobalBrandIntelligenceRuntime().resolve() call for other CPL-internal callers; this is the function named in the CPL proxy surface table (.context/packages/control-plane-layer.generated.md). Both paths hit the same BI method with the same failure/fallback contract.",
+      "notes": "This replaced the pre-platform-split BrandIntelligenceRuntime.resolve() in-process call (v6 architecture rewrite — @brandos/brand-intelligence was deleted). A second, equivalent proxy — resolveBrandCognitionContext() in packages/control-plane-layer/src/brand-memory/service.ts — wraps the same getGlobalCognitionClient().resolveCognitionContext() call for other CPL-internal callers; this is the function named in the CPL proxy surface table (.context/packages/control-plane-layer.generated.md). Both paths hit the same cognition-client method with the same failure/fallback contract.",
       "verification": {
         "checked": true,
         "verified": true

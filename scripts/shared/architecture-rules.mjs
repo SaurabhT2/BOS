@@ -17,6 +17,17 @@
  * ownership information already exists, consume it, derive from it, reuse it"),
  * this file does not introduce a new authority; it relocates the pre-existing
  * one. The rule contents are unchanged from their original location.
+ *
+ * v3 fix (Context Generation Pipeline Modernization):
+ *   RULE-1, RULE-2, RULE-3, RULE-6, RULE-7 all described the deleted
+ *   @brandos/brand-intelligence package. Rewritten to match
+ *   scripts/check-boundaries.mjs v6 (the live enforcement this file mirrors)
+ *   exactly: RULE-1/2/3 now describe @brandos/cognition-client; RULE-6/7 are
+ *   retired as standalone entries (their "no concrete class, use the
+ *   factory" intent is folded into RULE-3's description) — kept as
+ *   redirect stubs below rather than deleted outright so any existing
+ *   citation of "RULE-6"/"RULE-7" (e.g. in a stale doc, PR, or ticket)
+ *   still resolves to an explanation instead of silently disappearing.
  */
 
 import { ALLOWED_SAME_LEVEL_PAIRS, FORBIDDEN_IN_ROUTES } from './package-registry.mjs';
@@ -35,22 +46,22 @@ export const ARCH_RULES = [
     detail: `Allowed pairs: ${[...ALLOWED_SAME_LEVEL_PAIRS].join(' | ')}`,
   },
   {
-    id: 'RULE-1 — apps/web BI isolation',
-    source: 'check-boundaries.mjs checkWebBiWriteRule() + monorepo Rule 8',
-    description: '`apps/web` must NOT import `@brandos/brand-intelligence` directly. All BI access routes through CPL proxy functions.',
-    detail: 'CPL proxies: getBrandMemory(), recordBrandMemoryObservation(), reviewBrandMemorySignal(), resolveBrandCognitionContext(), getBrandSummary()',
+    id: 'RULE-1 — apps/web cognition-client isolation',
+    source: 'check-boundaries.mjs checkWebBiWriteRule() (v6)',
+    description: '`apps/web` must NOT import `@brandos/cognition-client` directly. All cognition access routes through CPL proxy functions.',
+    detail: 'CPL proxies: getBrandMemory() [throws — no CognitionProvider equivalent], recordBrandMemoryObservation(), reviewBrandMemorySignal(), resolveBrandCognitionContext(), getBrandSummary(), ingestWorkspaceKnowledgeAsset(). Exception: apps/web/instrumentation.ts (process bootstrap) constructs and registers the singleton once, at startup, via dynamic import().',
   },
   {
-    id: 'RULE-2 — OCL BI isolation',
-    source: 'check-boundaries.mjs checkOclBiRule()',
-    description: '`@brandos/output-control-layer` must NOT import from `@brandos/brand-intelligence`.',
-    detail: 'OCL receives all brand data via ResolvedGenerationContract. No direct BI import permitted.',
+    id: 'RULE-2 — OCL cognition-client isolation',
+    source: 'check-boundaries.mjs checkOclBiRule() (v6)',
+    description: '`@brandos/output-control-layer` must NOT import from `@brandos/cognition-client`.',
+    detail: 'OCL receives all cognition data via ResolvedGenerationContract / ContributorContext.cognitionContext, populated by CPLOrchestrator. No direct cognition-client import permitted.',
   },
   {
-    id: 'RULE-3 — CPL BI symbol allowlist',
-    source: 'check-boundaries.mjs checkCplBiRule() + CPL_BI_ALLOWED_SYMBOLS',
-    description: '`@brandos/control-plane-layer` may only import specific symbols from `@brandos/brand-intelligence`.',
-    detail: 'Allowed: getGlobalBrandIntelligenceRuntime, initBrandIntelligenceRuntime, IBrandCognitionRuntime, IBrandIntelligenceRuntime, BrandIntelligenceConfig, BrandIntelligenceResolution, createDegradedCognitionContext, createBrandSignalRepository',
+    id: 'RULE-3 — CPL cognition-client symbol allowlist',
+    source: 'check-boundaries.mjs checkCplBiRule() + CPL_COGNITION_ALLOWED_SYMBOLS (v6)',
+    description: '`@brandos/control-plane-layer` may only import specific symbols from `@brandos/cognition-client`.',
+    detail: 'Allowed: getGlobalCognitionClient, initCognitionClient, setGlobalCognitionClient, createDegradedCognitionContext, getGlobalKnowledgeIngestClient, initKnowledgeIngestClient, plus the CognitionContext/CognitionProvider type family re-exported from @platform/cognition-contract. HttpCognitionProvider and DegradedCognitionProvider (concrete classes) are deliberately excluded — see RULE-6/RULE-7.',
   },
   {
     id: 'RULE-4 — ARL ↛ OCL (Fix C1)',
@@ -65,16 +76,16 @@ export const ARCH_RULES = [
     detail: 'repairJSON / extractJSON moved to @brandos/shared-utils. Import from there.',
   },
   {
-    id: 'RULE-6 — CPL ↛ concrete BI repos (Fix C4)',
-    source: 'check-boundaries.mjs checkCplBiRepositoryRule()',
-    description: '`@brandos/control-plane-layer` must NOT import concrete BI repository classes.',
-    detail: 'Forbidden: SupabaseBrandSignalRepository, SupabaseBrandMemoryRepository, InMemoryBrandMemoryRepository. Use createBrandSignalRepository() factory instead.',
+    id: 'RULE-6 — retired, folded into RULE-3 (v6)',
+    source: 'formerly check-boundaries.mjs checkCplBiRepositoryRule() (Fix C4)',
+    description: '(Retired) Formerly: `@brandos/control-plane-layer` must NOT import concrete BI repository classes. Under the current HTTP-adapter architecture, IntelligenceOS\'s repository layer is not visible to BrandOS at all — this concern has no analog. See RULE-3.',
+    detail: 'No longer independently enforced; RULE-3\'s allowlist already excludes anything this rule would have caught.',
   },
   {
-    id: 'RULE-7 — CPL ↛ concrete BIRuntime class (Fix C3)',
-    source: 'check-boundaries.mjs checkCplBiConcreteClassRule()',
-    description: '`@brandos/control-plane-layer` must NOT import BrandIntelligenceRuntime concrete class as a value.',
-    detail: 'Use createDegradedCognitionContext() standalone export instead.',
+    id: 'RULE-7 — retired, folded into RULE-3 (v6)',
+    source: 'formerly check-boundaries.mjs checkCplBiConcreteClassRule() (Fix C3)',
+    description: '(Retired) Formerly: `@brandos/control-plane-layer` must NOT import BrandIntelligenceRuntime concrete class as a value. Current equivalent: CPL must not import HttpCognitionProvider/DegradedCognitionProvider as values — use createDegradedCognitionContext() / getGlobalCognitionClient() instead. Enforced as part of RULE-3\'s allowlist, not a separate check.',
+    detail: 'No longer independently enforced; RULE-3\'s allowlist already excludes anything this rule would have caught.',
   },
   {
     id: 'RULE-OCL-GOVERNANCE-CONFIG',

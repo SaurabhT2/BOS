@@ -19,7 +19,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
-import { KNOWN_PACKAGES } from './shared/package-registry.mjs';
+import { KNOWN_PACKAGES, isInternalPackage } from './shared/package-registry.mjs';
 import { collectWorkspacePackages } from './shared/fs-utils.mjs';
 
 const ROOT = resolve(process.cwd());
@@ -86,7 +86,10 @@ function checkPackage({ dir, pkg }) {
   };
 
   for (const [dep, ver] of Object.entries(allDeps)) {
-    if (!dep.startsWith('@brandos/')) continue;
+    // v3 fix: was `!dep.startsWith('@brandos/')`, which skipped workspace:*
+    // validation entirely for @platform/cognition-contract. Now derives from
+    // the shared RECOGNIZED_SCOPES authority.
+    if (!isInternalPackage(dep)) continue;
 
     if (dep === name) {
       fail(`${name}: self-referencing dependency "${dep}"`);

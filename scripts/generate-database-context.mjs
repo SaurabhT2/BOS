@@ -148,9 +148,14 @@ function renderTableDocs(tables) {
   for (const t of tables) {
     const ownership = TABLE_OWNERSHIP[t.table] ?? { owner: '*(unknown)*', readers: [], writers: [] };
     lines.push(`### \`${t.table}\`\n`);
-    lines.push(`**Owner:** ${ownership.owner}`);
+    if (ownership.orphaned) {
+      lines.push(`**Owner:** ⚠️ *ORPHANED — no current writer* (formerly \`${ownership.formerOwner}\`, deleted from the codebase; see Gap G-B2)`);
+    } else {
+      lines.push(`**Owner:** ${ownership.owner}`);
+    }
     if (ownership.readers.length) lines.push(`**Readers:** ${ownership.readers.join(', ')}`);
     if (ownership.writers.length) lines.push(`**Writers:** ${ownership.writers.join(', ')}`);
+    else if (ownership.orphaned) lines.push(`**Writers:** *(none — orphaned)*`);
     lines.push('');
 
     lines.push(`**Primary keys:** ${t.primary_keys?.map(k => `\`${k}\``).join(', ') || '*(none)*'}\n`);
@@ -173,10 +178,12 @@ function renderTableDocs(tables) {
 function renderOwnershipMap(tables) {
   const lines = ['## Database Ownership Mapping\n'];
 
-  // Group by owner
+  // Group by owner (orphaned tables — owner: null — grouped under a dedicated key
+  // rather than a literal "null" heading)
   const byOwner = {};
   for (const [table, info] of Object.entries(TABLE_OWNERSHIP)) {
-    (byOwner[info.owner] = byOwner[info.owner] ?? []).push({ table, ...info });
+    const ownerKey = info.orphaned ? 'ORPHANED (no current writer)' : info.owner;
+    (byOwner[ownerKey] = byOwner[ownerKey] ?? []).push({ table, ...info });
   }
 
   lines.push('| Table | Owner | Readers | Writers |');
@@ -185,6 +192,8 @@ function renderOwnershipMap(tables) {
     const info = TABLE_OWNERSHIP[t.table];
     if (!info) {
       lines.push(`| \`${t.table}\` | *(unmapped)* | — | — |`);
+    } else if (info.orphaned) {
+      lines.push(`| \`${t.table}\` | ⚠️ *orphaned (was ${info.formerOwner})* | ${info.readers.join(', ')} | *(none)* |`);
     } else {
       lines.push(`| \`${t.table}\` | ${info.owner} | ${info.readers.join(', ')} | ${info.writers.join(', ')} |`);
     }
@@ -208,6 +217,22 @@ function renderValidation(tables) {
   lines.push('### Missing Tables (in ownership map, absent from schema)\n');
   if (missingFromSchema.length === 0) lines.push('*(none — schema and ownership map agree)*');
   else for (const t of missingFromSchema) lines.push(`- \`${t}\` — present in ownership map but NOT in schema_inventory.json`);
+  lines.push('');
+
+  const orphanedOwnership = Object.entries(TABLE_OWNERSHIP).filter(([, info]) => info.orphaned);
+  lines.push('### Orphaned Ownership (owner package deleted, no current writer)\n');
+  if (orphanedOwnership.length === 0) {
+    lines.push('*(none)*');
+  } else {
+    lines.push('These tables have a TABLE_OWNERSHIP entry, so they are not "orphan tables" in ' +
+      'the sense above, but their owning package no longer exists in the codebase — nothing ' +
+      'currently writes them. This is not something a generator should silently resolve; it ' +
+      'requires a human decision (archive-and-drop vs. migrate into IntelligenceOS as historical ' +
+      'seed data — see BrandOS architecture review, Gap G-B2).\n');
+    for (const [table, info] of orphanedOwnership) {
+      lines.push(`- \`${table}\` — formerly owned by \`${info.formerOwner}\` (deleted)`);
+    }
+  }
   lines.push('');
 
   lines.push('### Ownership Violations\n');

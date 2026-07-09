@@ -1,6 +1,6 @@
 # BrandOS Runtime Trace (Generated)
 
-> **Generated:** 2026-07-02 11:05:18 UTC
+> **Generated:** 2026-07-09 09:59:53 UTC
 > **Authority:** read live from source at generation time — see the citation under each section header.
 > **Scope:** this documents *actual control flow as found in source*, including any disagreement with
 > `.context/runtime_model.generated.md` (which documents *intended* architecture). Where the two differ,
@@ -20,8 +20,8 @@ Source: `apps\web\instrumentation.ts` (read live at generation time — extracte
 0. **primeRuntime()** — forces AIRuntimeAdapter onto globalThis BEFORE AEL bootstrap
 1. **bootstrapArtifactEngine()** — registers carousel/deck/report/newsletter compilers + governance
 2. **bootstrapGovernancePlugins()** — registers governance plugin registry
-3. **initBrandIntelligenceRuntime()** — V2 BI runtime (SupabaseBrandSignalRepository)
-4. **bootstrapContractAssembler()** — registers contributors (Identity V2, Persona, Intent, Runtime, Artifact)
+3. **initCognitionClient()** — PLATFORM SPLIT: HTTP client wired to IntelligenceOS
+4. **bootstrapContractAssembler()** — registers contributors (Identity, Persona, Intent, Runtime, Artifact)
 5. **bootstrapSkillRuntime()** — ISkill runtime
 6. **SupabaseAdminSettingsService.load()** — admin settings cold-start wire (SPRINT1-FIX F-03)
 

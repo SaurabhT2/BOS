@@ -7,6 +7,8 @@
     "apps/*"
   ],
   "scripts": {
+    "context:refresh": "node scripts/context-refresh.mjs",
+    "context:refresh:ci": "node scripts/context-refresh.mjs --ci --json",
     "build": "turbo build",
     "build:packages": "turbo build --filter='./packages/*'",
     "typecheck": "turbo typecheck",

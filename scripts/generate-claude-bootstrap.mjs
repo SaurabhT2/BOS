@@ -504,7 +504,7 @@ function buildAgentWorkflow(inputs) {
   lines.push('4. Read `.context/behavior_contracts.generated.json` for any cross-package contract your change affects.');
   lines.push('5. Implement the change.');
   lines.push(`6. Validate: \`node scripts/check-boundaries.mjs\`, \`node scripts/check-workspace.mjs\`${hasFixes ? ', and review `.context/architecture_fixes.generated.md` for any newly introduced violation' : ''}.`);
-  lines.push('7. Re-run the context generators (`scripts/package-workspace.ps1` does this automatically) so `.context/` and this document reflect the change for the next agent.');
+  lines.push('7. Run `pnpm context:refresh` so `.context/` and this document reflect the change for the next agent.');
   return lines.join('\n');
 }
 

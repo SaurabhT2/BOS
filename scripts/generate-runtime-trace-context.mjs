@@ -41,7 +41,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join, resolve, relative } from 'path';
 import { fileURLToPath } from 'url';
 
-import { KNOWN_PACKAGES } from './shared/package-registry.mjs';
+import { KNOWN_PACKAGES, FORBIDDEN_IN_ROUTES } from './shared/package-registry.mjs';
 import { ensureDir, renderTimestamp } from './shared/context-utils.mjs';
 import { walkSourceFiles } from './shared/fs-utils.mjs';
 import { TABLE_OWNERSHIP } from './shared/table-ownership.mjs';
@@ -97,6 +97,14 @@ function findRouteFiles() {
 }
 
 function analyzeRouteOrchestration() {
+  // v3 fix: was a fourth independently-hardcoded copy of the forbidden-import
+  // list (and still referenced the deleted @brandos/brand-intelligence, never
+  // updated to @brandos/cognition-client). Now derived from
+  // FORBIDDEN_IN_ROUTES (shared/package-registry.mjs), the same authority
+  // check-route-boundaries.mjs itself uses.
+  const forbiddenRe = new RegExp(
+    `@brandos\\/(${FORBIDDEN_IN_ROUTES.map((p) => p.replace('@brandos/', '')).join('|')})['"]`
+  );
   const rows = [];
   for (const { route, file } of findRouteFiles()) {
     const src = readSafe(file) ?? '';
@@ -105,7 +113,7 @@ function analyzeRouteOrchestration() {
       file: relative(ROOT, file),
       callsControlPlane: /\brunControlPlane\s*\(/.test(src),
       callsArtifactPipeline: /\bexecuteArtifactPipeline\s*\(/.test(src),
-      importsForbiddenLayer: /@brandos\/(governance-layer|ai-runtime-layer|output-control-layer|artifact-engine-layer|iskill-runtime|brand-intelligence)['"]/.test(src),
+      importsForbiddenLayer: forbiddenRe.test(src),
     });
   }
   return rows;

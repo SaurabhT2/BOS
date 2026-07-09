@@ -33,7 +33,34 @@
  *   check-circular.mjs / lint-imports.mjs's source walk (their src/ trees
  *   were never scanned at all — PACKAGE_SRC_MAP is the walk list). Both
  *   are now registered.
+ *
+ * v3 fix (Context Generation Pipeline Modernization):
+ *   LAYER_TIERS / KNOWN_PACKAGES / PACKAGE_SRC_MAP already correctly list
+ *   @platform/cognition-contract (confirmed — this was NOT a gap). The real,
+ *   verified gap was one level up: every regex/prefix-filter across scripts/
+ *   and scripts/shared/ that identifies "an internal workspace import" was
+ *   hardcoded to `startsWith('@brandos/')` / `/@brandos\//`, silently blind
+ *   to any `@platform/`-scoped import — i.e. every import of cognition-contract
+ *   itself, repo-wide, in both package.json deps and source files, was
+ *   invisible to check-boundaries.mjs's getWorkspaceDeps()/getImportsFromSource(),
+ *   check-workspace.mjs's per-package dependency validation, and
+ *   context-utils.mjs's getBrandosImports()/getBrandosDeps() (and therefore to
+ *   every generator built on top of those two: inventory.mjs, and everything
+ *   that consumes it). RECOGNIZED_SCOPES below is the new shared authority for
+ *   "what counts as an internal package prefix"; the call sites above now
+ *   derive their matching from it instead of a hardcoded '@brandos/' literal.
  */
+
+// ── Recognized internal npm scopes ─────────────────────────────────────────
+// Any import/dependency whose package name starts with one of these prefixes
+// is "internal" to the platform and subject to boundary/layer enforcement.
+// Add a new prefix here (not inline in individual scripts) if a third scope
+// is ever introduced.
+export const RECOGNIZED_SCOPES = ['@brandos/', '@platform/'];
+
+export function isInternalPackage(name) {
+  return RECOGNIZED_SCOPES.some((scope) => name.startsWith(scope));
+}
 
 // ── Layer tiers — lower index = more foundational ─────────────────────────
 // Each sub-array is a set of peer packages at the same tier.

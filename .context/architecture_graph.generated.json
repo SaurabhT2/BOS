@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-07-02 11:05:18 UTC",
+    "generated": "2026-07-09 09:59:52 UTC",
     "generator": "scripts/generate-architecture-graph.mjs",
     "purpose": "Agent-readable architecture knowledge graph — ownership, dependencies, exports, table access, routes, restrictions and applicable rules per package, derived from existing authorities (no duplicated source of truth).",
     "authoritySources": [
@@ -12,21 +12,79 @@
       "scripts/shared/architecture-rules.mjs",
       "apps/web/app/api/**/route.ts (route discovery)"
     ],
-    "packageCount": 16
+    "packageCount": 17
   },
   "packages": [
     {
-      "package": "@brandos/contracts",
+      "package": "@platform/cognition-contract",
       "layer": "L0",
+      "layerPeers": [],
+      "dir": "packages/cognition-contract",
+      "isApp": false,
+      "dependsOn": [],
+      "usedBy": [
+        "@brandos/cognition-client",
+        "@brandos/contracts",
+        "@brandos/control-plane-layer"
+      ],
+      "exports": [
+        "CognitionConfidence",
+        "VoiceProfile",
+        "IdentityContribution",
+        "VisualIdentityProjection",
+        "CognitionProvenance",
+        "CognitionContext",
+        "CognitionRequest",
+        "ObservationInput",
+        "CognitionSummary",
+        "CognitionHealth",
+        "CognitionReviewDecision",
+        "COGNITION_CONTRACT_VERSION",
+        "CognitionProvider",
+        "createDegradedCognitionContext"
+      ],
+      "exportCount": 14,
+      "tables": [],
+      "readsTables": [],
+      "writesTables": [],
+      "routes": [],
+      "restrictions": [],
+      "forbiddenDependencies": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-config",
+        "@brandos/artifact-engine-layer",
+        "@brandos/auth",
+        "@brandos/cognition-client",
+        "@brandos/contracts",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-config",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/shared-utils",
+        "@brandos/ui-admin"
+      ],
+      "appliesRules": [
+        "RULE-LAYER-ORDER",
+        "RULE-SAME-LEVEL-PEERS",
+        "RULE-3 — CPL cognition-client symbol allowlist"
+      ]
+    },
+    {
+      "package": "@brandos/contracts",
+      "layer": "L1",
       "layerPeers": [],
       "dir": "packages/contracts",
       "isApp": false,
-      "dependsOn": [],
+      "dependsOn": [
+        "@platform/cognition-contract"
+      ],
       "usedBy": [
         "@brandos/ai-runtime-layer",
         "@brandos/artifact-engine-layer",
         "@brandos/auth",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-config",
         "@brandos/governance-layer",
@@ -220,22 +278,6 @@
         "checkRuntimeExports",
         "ValidationCheckResult",
         "PackageValidationReport",
-        "BrandSignalStatus",
-        "IBrandMemorySignal",
-        "IBrandMemoryConfig",
-        "IBrandSignalRepository",
-        "ITopicProfile",
-        "IDecayReport",
-        "IBrandCognitionContext",
-        "IBrandVoice",
-        "IArtifactObservationRequest",
-        "IBrandCognitionRuntime",
-        "IBrandCognitionHealthReport",
-        "IBrandCognitionHealthCheck",
-        "BrandIntelligenceCapabilityDescriptor",
-        "SIGNAL_CLASSIFICATION",
-        "DEFAULT_BRAND_MEMORY_CONFIG_V2",
-        "BRAND_INTELLIGENCE_CAPABILITY_REGISTRY",
         "GovernanceViolationSeverity",
         "IGovernanceViolationDetail",
         "IGovernanceRecommendationDetail",
@@ -313,7 +355,7 @@
         "IntentTaskType",
         "IntentAnalysis"
       ],
-      "exportCount": 274,
+      "exportCount": 258,
       "tables": [],
       "readsTables": [],
       "writesTables": [],
@@ -324,7 +366,7 @@
         "@brandos/artifact-config",
         "@brandos/artifact-engine-layer",
         "@brandos/auth",
-        "@brandos/brand-intelligence",
+        "@brandos/cognition-client",
         "@brandos/control-plane-layer",
         "@brandos/governance-config",
         "@brandos/governance-layer",
@@ -343,7 +385,7 @@
     },
     {
       "package": "@brandos/shared-utils",
-      "layer": "L1",
+      "layer": "L2",
       "layerPeers": [],
       "dir": "packages/shared-utils",
       "isApp": false,
@@ -352,6 +394,7 @@
       ],
       "usedBy": [
         "@brandos/ai-runtime-layer",
+        "@brandos/cognition-client",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -401,7 +444,7 @@
         "@brandos/artifact-config",
         "@brandos/artifact-engine-layer",
         "@brandos/auth",
-        "@brandos/brand-intelligence",
+        "@brandos/cognition-client",
         "@brandos/control-plane-layer",
         "@brandos/governance-config",
         "@brandos/governance-layer",
@@ -418,8 +461,83 @@
       ]
     },
     {
+      "package": "@brandos/cognition-client",
+      "layer": "L3",
+      "layerPeers": [],
+      "dir": "packages/cognition-client",
+      "isApp": false,
+      "dependsOn": [
+        "@brandos/shared-utils",
+        "@platform/cognition-contract"
+      ],
+      "usedBy": [
+        "@brandos/control-plane-layer",
+        "@brandos/web"
+      ],
+      "exports": [
+        "HttpCognitionProvider",
+        "HttpCognitionProviderConfig",
+        "DegradedCognitionProvider",
+        "initCognitionClient",
+        "setGlobalCognitionClient",
+        "getGlobalCognitionClient",
+        "_resetGlobalCognitionClientForTests",
+        "KnowledgeIngestClient",
+        "KnowledgeIngestClientConfig",
+        "KnowledgeAssetIngestInput",
+        "initKnowledgeIngestClient",
+        "getGlobalKnowledgeIngestClient",
+        "_resetGlobalKnowledgeIngestClientForTests",
+        "CognitionContext",
+        "CognitionConfidence",
+        "VoiceProfile",
+        "IdentityContribution",
+        "VisualIdentityProjection",
+        "CognitionProvenance",
+        "CognitionRequest",
+        "ObservationInput",
+        "CognitionSummary",
+        "CognitionHealth",
+        "CognitionReviewDecision",
+        "CognitionProvider",
+        "createDegradedCognitionContext"
+      ],
+      "exportCount": 26,
+      "tables": [],
+      "readsTables": [],
+      "writesTables": [],
+      "routes": [],
+      "restrictions": [
+        "The ONLY BrandOS package permitted to hold a concrete `CognitionProvider` implementation (`HttpCognitionProvider` / `DegradedCognitionProvider`)",
+        "Performs no reasoning — pure serialize/deserialize + HTTP + degraded-mode fallback",
+        "Public API surface is `packages/cognition-client/src/index.ts` — consumers must not deep-import"
+      ],
+      "forbiddenDependencies": [
+        "@brandos/ai-runtime-layer",
+        "@brandos/artifact-config",
+        "@brandos/artifact-engine-layer",
+        "@brandos/auth",
+        "@brandos/control-plane-layer",
+        "@brandos/governance-config",
+        "@brandos/governance-layer",
+        "@brandos/iskill-runtime",
+        "@brandos/output-control-layer",
+        "@brandos/presentation-layer",
+        "@brandos/runtime-config",
+        "@brandos/ui-admin"
+      ],
+      "appliesRules": [
+        "RULE-LAYER-ORDER",
+        "RULE-SAME-LEVEL-PEERS",
+        "RULE-1 — apps/web cognition-client isolation",
+        "RULE-2 — OCL cognition-client isolation",
+        "RULE-3 — CPL cognition-client symbol allowlist",
+        "RULE-ROUTE-BOUNDARY"
+      ]
+    },
+    {
       "package": "@brandos/auth",
-      "layer": "L2",
+      "layer": "L4",
       "layerPeers": [],
       "dir": "packages/auth",
       "isApp": false,
@@ -568,7 +686,6 @@
         "@brandos/ai-runtime-layer",
         "@brandos/artifact-config",
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-config",
         "@brandos/governance-layer",
@@ -586,7 +703,7 @@
     },
     {
       "package": "@brandos/runtime-config",
-      "layer": "L3",
+      "layer": "L5",
       "layerPeers": [
         "@brandos/governance-config",
         "@brandos/artifact-config",
@@ -643,7 +760,6 @@
       "forbiddenDependencies": [
         "@brandos/ai-runtime-layer",
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -657,7 +773,7 @@
     },
     {
       "package": "@brandos/governance-config",
-      "layer": "L3",
+      "layer": "L5",
       "layerPeers": [
         "@brandos/runtime-config",
         "@brandos/artifact-config",
@@ -744,7 +860,6 @@
       "forbiddenDependencies": [
         "@brandos/ai-runtime-layer",
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -759,7 +874,7 @@
     },
     {
       "package": "@brandos/artifact-config",
-      "layer": "L3",
+      "layer": "L5",
       "layerPeers": [
         "@brandos/runtime-config",
         "@brandos/governance-config",
@@ -808,7 +923,6 @@
       "forbiddenDependencies": [
         "@brandos/ai-runtime-layer",
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -822,7 +936,7 @@
     },
     {
       "package": "@brandos/ui-admin",
-      "layer": "L3",
+      "layer": "L5",
       "layerPeers": [
         "@brandos/runtime-config",
         "@brandos/governance-config",
@@ -844,7 +958,6 @@
       "forbiddenDependencies": [
         "@brandos/ai-runtime-layer",
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -858,7 +971,7 @@
     },
     {
       "package": "@brandos/ai-runtime-layer",
-      "layer": "L4",
+      "layer": "L6",
       "layerPeers": [
         "@brandos/output-control-layer"
       ],
@@ -939,7 +1052,6 @@
       ],
       "forbiddenDependencies": [
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -954,7 +1066,7 @@
     },
     {
       "package": "@brandos/output-control-layer",
-      "layer": "L4",
+      "layer": "L6",
       "layerPeers": [
         "@brandos/ai-runtime-layer"
       ],
@@ -1029,14 +1141,13 @@
       "writesTables": [],
       "routes": [],
       "restrictions": [
-        "Must NOT import from `@brandos/brand-intelligence` (RULE-2)",
+        "Must NOT import from `@brandos/cognition-client` (RULE-2)",
         "Must NOT import from `@brandos/governance-config` (OCL-GOVERNANCE-CONFIG — WS2)",
         "Structural constraints sourced from `@brandos/contracts` only",
         "Enforced by `tests/boundary/dependencyBoundary.test.ts`"
       ],
       "forbiddenDependencies": [
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/governance-layer",
         "@brandos/iskill-runtime",
@@ -1045,7 +1156,7 @@
       "appliesRules": [
         "RULE-LAYER-ORDER",
         "RULE-SAME-LEVEL-PEERS",
-        "RULE-2 — OCL BI isolation",
+        "RULE-2 — OCL cognition-client isolation",
         "RULE-OCL-GOVERNANCE-CONFIG",
         "RULE-4 — ARL ↛ OCL (Fix C1)",
         "RULE-5 — GL ↛ OCL (Fix C2)",
@@ -1054,7 +1165,7 @@
     },
     {
       "package": "@brandos/governance-layer",
-      "layer": "L5",
+      "layer": "L7",
       "layerPeers": [
         "@brandos/iskill-runtime"
       ],
@@ -1117,7 +1228,6 @@
       ],
       "forbiddenDependencies": [
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/presentation-layer"
       ],
@@ -1130,7 +1240,7 @@
     },
     {
       "package": "@brandos/iskill-runtime",
-      "layer": "L5",
+      "layer": "L7",
       "layerPeers": [
         "@brandos/governance-layer"
       ],
@@ -1212,7 +1322,6 @@
       "restrictions": [],
       "forbiddenDependencies": [
         "@brandos/artifact-engine-layer",
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/presentation-layer"
       ],
@@ -1224,7 +1333,7 @@
     },
     {
       "package": "@brandos/artifact-engine-layer",
-      "layer": "L6",
+      "layer": "L8",
       "layerPeers": [],
       "dir": "packages/artifact-engine-layer",
       "isApp": false,
@@ -1273,7 +1382,6 @@
         "All external orchestration via `globalArtifactEngine` singleton (exported from `bootstrap.ts`)"
       ],
       "forbiddenDependencies": [
-        "@brandos/brand-intelligence",
         "@brandos/control-plane-layer",
         "@brandos/presentation-layer"
       ],
@@ -1285,102 +1393,8 @@
       ]
     },
     {
-      "package": "@brandos/brand-intelligence",
-      "layer": "L7",
-      "layerPeers": [],
-      "dir": "packages/brand-intelligence",
-      "isApp": false,
-      "dependsOn": [
-        "@brandos/contracts"
-      ],
-      "usedBy": [
-        "@brandos/control-plane-layer",
-        "@brandos/web"
-      ],
-      "exports": [
-        "initBrandIntelligenceRuntime",
-        "getGlobalBrandIntelligenceRuntime",
-        "_resetGlobalRuntimeForTests",
-        "IBrandIntelligenceRuntime",
-        "BrandIntelligenceResolution",
-        "BrandIntelligenceConfig",
-        "BrandIntelligenceRuntime",
-        "SupabaseBrandSignalRepository",
-        "InMemoryBrandSignalRepository",
-        "BrandMemoryServiceV2",
-        "StyleProjectionResolver",
-        "TopicProfileResolver",
-        "BrandContext",
-        "mergeBrandContext",
-        "buildBrandSystemFragment",
-        "ISemanticIdentity",
-        "IVisualIdentity",
-        "IdentitySnapshot",
-        "VisualIdentitySnapshot",
-        "IdentitySignal",
-        "SignalType",
-        "IdentityDimension",
-        "SemanticIdentityDimension",
-        "VisualIdentityDimension",
-        "ArtifactVisualMetadata",
-        "VisualPersonalizationContext",
-        "PromptPersonalizationContext",
-        "ISkillPersonalizationContext",
-        "IIdentityProjection",
-        "IPersonalizationSnapshot",
-        "IObservationEvent",
-        "ExtractionResult",
-        "MergeDecision",
-        "MergeStrategy",
-        "IdentityLayerConfig",
-        "IdentityVersionRecord",
-        "IdentityProfile",
-        "SEMANTIC_DIMENSIONS",
-        "VISUAL_DIMENSIONS",
-        "ALL_DIMENSIONS",
-        "isVisualDimension",
-        "isSemanticDimension",
-        "DEFAULT_IDENTITY_CONFIG",
-        "createDegradedCognitionContext",
-        "createBrandSignalRepository"
-      ],
-      "exportCount": 45,
-      "tables": [
-        "brand_memory_entries",
-        "identity_signals",
-        "identity_versions"
-      ],
-      "readsTables": [
-        "brand_assets",
-        "workspaces"
-      ],
-      "writesTables": [
-        "brand_memory_entries",
-        "identity_signals",
-        "identity_versions"
-      ],
-      "routes": [],
-      "restrictions": [
-        "Fully removed: `updatePersonaProfile()`, `resolvePersonaContribution()` (Cleanup Sprint 2)",
-        "These symbols no longer exist in the runtime class or `IBrandIntelligenceRuntime`",
-        "V2 API only: `initBrandIntelligenceRuntime`, `getGlobalBrandIntelligenceRuntime`, factory functions"
-      ],
-      "forbiddenDependencies": [
-        "@brandos/control-plane-layer",
-        "@brandos/presentation-layer"
-      ],
-      "appliesRules": [
-        "RULE-LAYER-ORDER",
-        "RULE-SAME-LEVEL-PEERS",
-        "RULE-1 — apps/web BI isolation",
-        "RULE-2 — OCL BI isolation",
-        "RULE-3 — CPL BI symbol allowlist",
-        "RULE-ROUTE-BOUNDARY"
-      ]
-    },
-    {
       "package": "@brandos/control-plane-layer",
-      "layer": "L8",
+      "layer": "L9",
       "layerPeers": [],
       "dir": "packages/control-plane-layer",
       "isApp": false,
@@ -1389,13 +1403,14 @@
         "@brandos/artifact-config",
         "@brandos/artifact-engine-layer",
         "@brandos/auth",
-        "@brandos/brand-intelligence",
+        "@brandos/cognition-client",
         "@brandos/contracts",
         "@brandos/governance-config",
         "@brandos/governance-layer",
         "@brandos/output-control-layer",
         "@brandos/runtime-config",
-        "@brandos/shared-utils"
+        "@brandos/shared-utils",
+        "@platform/cognition-contract"
       ],
       "usedBy": [
         "@brandos/web"
@@ -1509,11 +1524,13 @@
         "reviewBrandMemorySignal",
         "resolveBrandCognitionContext",
         "getBrandSummary",
+        "ingestWorkspaceKnowledgeAsset",
+        "KnowledgeAssetIngestInput",
         "ProviderGovernanceService",
         "bootstrapContractAssembler",
         "_resetContractAssemblerForTesting"
       ],
-      "exportCount": 111,
+      "exportCount": 113,
       "tables": [
         "brandos_admin_settings",
         "brandos_artifact_approvals",
@@ -1554,9 +1571,8 @@
       ],
       "routes": [],
       "restrictions": [
-        "May ONLY import these symbols from `@brandos/brand-intelligence`: getGlobalBrandIntelligenceRuntime, initBrandIntelligenceRuntime, IBrandCognitionRuntime, IBrandIntelligenceRuntime, BrandIntelligenceConfig, BrandIntelligenceResolution, createDegradedCognitionContext, createBrandSignalRepository (RULE-3)",
-        "Must NOT import concrete BI repository classes (RULE-6 / Fix C4) — use `createBrandSignalRepository()` factory",
-        "Must NOT import `BrandIntelligenceRuntime` concrete class as a value (RULE-7 / Fix C3) — use `createDegradedCognitionContext()`",
+        "May ONLY import these symbols from `@brandos/cognition-client`: getGlobalCognitionClient, initCognitionClient, setGlobalCognitionClient, createDegradedCognitionContext, getGlobalKnowledgeIngestClient, initKnowledgeIngestClient, CognitionContext, CognitionConfidence, VoiceProfile, IdentityContribution, VisualIdentityProjection, CognitionProvenance, CognitionRequest, ObservationInput, CognitionSummary, CognitionHealth, CognitionReviewDecision, CognitionProvider, KnowledgeAssetIngestInput, HttpCognitionProviderConfig, KnowledgeIngestClientConfig (RULE-3)",
+        "Must NOT import `HttpCognitionProvider` / `DegradedCognitionProvider` concrete classes as values (folded into RULE-3's allowlist, formerly separate RULE-6/RULE-7) — use `getGlobalCognitionClient()` / `createDegradedCognitionContext()`",
         "`engine.ts` and `registry.ts` in artifact-engine-layer are read-only (RULE-11)",
         "Every /api/admin/* route must call `requireAdmin()` (RULE-12)",
         "CPL-touching routes must export `const runtime = \"nodejs\"` (RULE-13)"
@@ -1567,9 +1583,9 @@
       "appliesRules": [
         "RULE-LAYER-ORDER",
         "RULE-SAME-LEVEL-PEERS",
-        "RULE-3 — CPL BI symbol allowlist",
-        "RULE-6 — CPL ↛ concrete BI repos (Fix C4)",
-        "RULE-7 — CPL ↛ concrete BIRuntime class (Fix C3)",
+        "RULE-3 — CPL cognition-client symbol allowlist",
+        "RULE-6 — retired, folded into RULE-3 (v6)",
+        "RULE-7 — retired, folded into RULE-3 (v6)",
         "RULE-ARTIFACT-ENGINE-NO-TOUCH",
         "RULE-ADMIN-AUTH",
         "RULE-NODEJS-RUNTIME"
@@ -1577,7 +1593,7 @@
     },
     {
       "package": "@brandos/presentation-layer",
-      "layer": "L9",
+      "layer": "L10",
       "layerPeers": [],
       "dir": "packages/presentation-layer",
       "isApp": false,
@@ -1626,7 +1642,7 @@
     },
     {
       "package": "@brandos/web",
-      "layer": "L10",
+      "layer": "L11",
       "layerPeers": [],
       "dir": "apps/web",
       "isApp": true,
@@ -1635,7 +1651,7 @@
         "@brandos/artifact-config",
         "@brandos/artifact-engine-layer",
         "@brandos/auth",
-        "@brandos/brand-intelligence",
+        "@brandos/cognition-client",
         "@brandos/contracts",
         "@brandos/control-plane-layer",
         "@brandos/governance-config",
@@ -1716,9 +1732,10 @@
         "/api/workspace/usage"
       ],
       "restrictions": [
-        "Must NOT import `@brandos/brand-intelligence` directly (RULE-1 / Rule 8)",
-        "All BI access via CPL proxy: `getBrandMemory()`, `recordBrandMemoryObservation()`, `reviewBrandMemorySignal()`, `resolveBrandCognitionContext()`, `getBrandSummary()`",
-        "Route files must NOT import: @brandos/governance-layer, @brandos/ai-runtime-layer, @brandos/output-control-layer, @brandos/artifact-engine-layer, @brandos/iskill-runtime, @brandos/brand-intelligence",
+        "Must NOT import `@brandos/cognition-client` directly (RULE-1)",
+        "All cognition access via CPL proxy: `getBrandMemory()` (currently throws — no CognitionProvider equivalent, see cognition-contract/README.md \"Known contract gaps\" item 1), `recordBrandMemoryObservation()`, `reviewBrandMemorySignal()`, `resolveBrandCognitionContext()`, `getBrandSummary()`, `ingestWorkspaceKnowledgeAsset()`",
+        "Exception: `apps/web/instrumentation.ts` (process bootstrap) may dynamically `import()` `@brandos/cognition-client` to construct and register the singleton once, at startup",
+        "Route files must NOT import: @brandos/governance-layer, @brandos/ai-runtime-layer, @brandos/output-control-layer, @brandos/artifact-engine-layer, @brandos/iskill-runtime, @brandos/cognition-client",
         "Auth imported directly from `@brandos/auth` (removed PL intermediate hop)",
         "`apps/web/app/layout.tsx` wraps children in `<PLAuthBridge>` inside `<AuthProvider>`",
         "`apps/web/lib/pl-auth-bridge.tsx` bridges `useAuth()` into `PLAuthProvider`"
@@ -1727,7 +1744,7 @@
       "appliesRules": [
         "RULE-LAYER-ORDER",
         "RULE-SAME-LEVEL-PEERS",
-        "RULE-1 — apps/web BI isolation",
+        "RULE-1 — apps/web cognition-client isolation",
         "RULE-ROUTE-BOUNDARY"
       ]
     }

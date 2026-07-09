@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-07-08T00:53:49.847Z",
+  "totalMs": 1141,
+  "okCount": 14,
+  "skippedCount": 1,
+  "failedCount": 0,
+  "steps": [
+    {
+      "script": "check-workspace.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 43
+    },
+    {
+      "script": "check-boundaries.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 59
+    },
+    {
+      "script": "generate-schema-inventory.mjs",
+      "ok": false,
+      "optional": true,
+      "durationMs": 0
+    },
+    {
+      "script": "generate-agent-entrypoints.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 54
+    },
+    {
+      "script": "generate-architecture-graph.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 47
+    },
+    {
+      "script": "generate-dependency-impact.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 43
+    },
+    {
+      "script": "generate-behavior-contracts.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 31
+    },
+    {
+      "script": "generate-monorepo-context.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 61
+    },
+    {
+      "script": "generate-runtime-trace-context.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 117
+    },
+    {
+      "script": "generate-package-contexts.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 50
+    },
+    {
+      "script": "generate-architecture-fixes.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 457
+    },
+    {
+      "script": "generate-database-context.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 34
+    },
+    {
+      "script": "generate-runtime-model.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 34
+    },
+    {
+      "script": "generate-system-inventory.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 35
+    },
+    {
+      "script": "generate-claude-bootstrap.mjs",
+      "ok": true,
+      "optional": false,
+      "durationMs": 64
+    }
+  ],
+  "artifactValidation": {
+    "failed": false,
+    "messages": [
+      "✅ All generated artifacts present, non-empty, and pass regression checks."
+    ]
+  }
+}

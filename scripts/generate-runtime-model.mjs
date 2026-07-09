@@ -28,6 +28,7 @@ import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { ensureDir, renderTimestamp } from './shared/context-utils.mjs';
 import { LAYER_TIERS, KNOWN_PACKAGES, BUILD_ORDER } from './shared/package-registry.mjs';
+import { CPL_PROXY_SURFACE } from './shared/package-restrictions.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT      = resolve(join(__dirname, '..'));
@@ -97,10 +98,10 @@ function renderGenerationFlow() {
 apps/web (API route)
   └─ runControlPlane(request)                       [@brandos/control-plane-layer]
        └─ CPLOrchestrator.orchestrate()
-            ├─ resolveBrandCognitionContext()        [CPL proxy → BI runtime.resolve()]
+            ├─ resolveBrandCognitionContext()        [CPL proxy → cognition-client → HTTP → IntelligenceOS]
             ├─ ContractAssemblerFactory.create()     [@brandos/output-control-layer]
             │   └─ Contributors:
-            │       ├─ PersonaContributor            [self-contained, no BI delegation — WS3]
+            │       ├─ PersonaContributor            [self-contained, no cognition-client delegation — WS3]
             │       └─ IdentityContributor
             ├─ compilePromptFromContract()           [@brandos/output-control-layer]
             ├─ callWithMode()                        [@brandos/ai-runtime-layer — LLM call]
@@ -110,7 +111,7 @@ apps/web (API route)
                            ├─ OCL compile*Artifact()
                            ├─ governance.validate*Artifact()
                            └─ repair loop (max 2 attempts)
-  └─ recordBrandMemoryObservation()                 [CPL proxy → BI, fire-and-forget]
+  └─ recordBrandMemoryObservation()                 [CPL proxy → cognition-client, fire-and-forget]
 \`\`\`
 
 ### Key Invariants
@@ -119,7 +120,7 @@ apps/web (API route)
 - Raw LLM output NEVER reaches \`@brandos/governance-layer\` — OCL normalises first (Rule 4 — OCL-First Law).
 - \`apps/web\` routes call \`runControlPlane()\` only. No direct AI/governance imports.
 - Brand intelligence is fire-and-forget: observation recording does not block response delivery.
-- CPL proxy functions are the only BI surface visible to \`apps/web\`.
+- CPL proxy functions are the only cognition surface visible to \`apps/web\`.
 
 `;
 }
@@ -188,66 +189,72 @@ generation limits (\`monthly_generation_limit\`, \`asset_storage_limit_mb\`).
 `;
 }
 
-function renderBrandIntelligenceModel(tables) {
+function renderCognitionClientModel(tables) {
   const bme = tableByName(tables, 'brand_memory_entries');
   const sig = tableByName(tables, 'identity_signals');
   const ver = tableByName(tables, 'identity_versions');
 
-  return `## Brand Intelligence Model
+  return `## Cognition Client Model
 
-*Derived from: schema_inventory.json + @brandos/brand-intelligence architecture*
+*Derived from: schema_inventory.json + @brandos/cognition-client architecture*
 
-Owner: **\`@brandos/brand-intelligence\`** (L6)
-CPL access via proxy functions only.
+**@brandos/brand-intelligence was deleted** in the BrandOS / IntelligenceOS platform
+split. Cognition is no longer performed in-process. \`@brandos/cognition-client\`
+(L6) is a stateless HTTP adapter — it holds no data, computes nothing, and owns no
+tables. All reasoning now happens in the separate IntelligenceOS repository, reached
+over HTTP via \`@platform/cognition-contract\`'s \`CognitionProvider\` interface.
 
-### brand_memory_entries
+CPL access via proxy functions only (RULE-1/2/3) — see CPL Proxy Surface below.
+
+### ⚠️ Orphaned tables (historical brand-intelligence data — no current writer)
+
+These three tables still exist in the live schema. Nothing in the current codebase
+writes to them; \`@brandos/brand-intelligence\`, their sole writer, was deleted.
+They are **not** part of the live cognition flow — do not assume data here is
+current or that resolving cognition context reads from them. See
+scripts/shared/table-ownership.mjs and the BrandOS architecture review (Gap G-B2)
+for the required human decision (archive-and-drop vs. migrate once into
+IntelligenceOS as historical seed data) before these rows are queried or acted on.
+
+#### brand_memory_entries
 Fields: ${colList(bme)}
 
-V2 memory store. Each entry has a \`classification\` (single char: A/B/C/D/E),
+Former V2 memory store. Each entry had a \`classification\` (single char: A/B/C/D/E),
 \`status\` (\`pending_review\` | \`approved\` | \`rejected\`), \`confidence\`,
 \`frequency\`, and decay fields (\`decay_rate\`, \`decayed_at\`, \`last_seen_at\`).
 
-Key indexes:
-- \`idx_bme_v2_workspace_class_status\` — primary query path for cognition resolution
-- \`idx_bme_v2_last_seen_status\` — decay processing
-- \`idx_bme_v2_topic_hash\` — topic diversity tracking
-
-### identity_signals
+#### identity_signals
 Fields: ${colList(sig)}
 
-Fine-grained brand identity signals. Keyed by \`(workspace_id, persona_id, dimension,
-signal_type)\`. \`weighted_confidence\` is the effective signal strength after
-frequency and recency weighting.
+Former fine-grained brand identity signals, keyed by \`(workspace_id, persona_id,
+dimension, signal_type)\`.
 
-### identity_versions
+#### identity_versions
 Fields: ${colList(ver)}
 
-Snapshot history of resolved identity at a point in time. \`is_current = true\`
-marks the live snapshot. \`snapshot\` (jsonb) is the full resolved identity object.
+Former snapshot history of resolved identity at a point in time.
 
-### Signal Lifecycle
+### Current Cognition Flow (cross-repository)
 
 \`\`\`
 LLM output scored by @brandos/governance-layer
-  → CPLOrchestrator.recordBrandMemoryObservation() (fire-and-forget)
-    → BI runtime.recordArtifactObservation()
-      → BrandMemoryServiceV2.upsertSignal()
-        → brand_memory_entries (status: pending_review)
-          → admin reviews via /api/admin/brand-memory
-            → brand_memory_entries (status: approved)
-              → feeds next resolveBrandCognitionContext()
+  → CPLOrchestrator.orchestrate() calls cognitionClient.observe() (fire-and-forget)
+    → @brandos/cognition-client — HttpCognitionProvider
+      → HTTP POST → IntelligenceOS apps/api (separate repository)
+        → IntelligenceOS Learning Pipeline: SignalExtractor → ObservationBuilder
+          → HypothesisEngine → LearningValidator → ProfileBuilder
+            → intelligence.learnings / intelligence.profiles (IntelligenceOS's own DB)
+              → surfaced on the NEXT resolveCognitionContext() call, never synchronously
 \`\`\`
+
+The equivalent "signal review" UI feature this repository's own \`/workspace/brand\`
+route once exposed (approve/reject pending signals) has no current backing
+operation — \`getBrandMemory()\` throws by design; see cognition-contract/README.md
+"Known contract gaps", item 1.
 
 ### CPL Proxy Surface
 
-| Proxy (in @brandos/control-plane-layer) | BI Method |
-|---|---|
-| \`getBrandMemory(workspaceId, classification?)\` | \`runtime.getMemory()\` |
-| \`recordBrandMemoryObservation(input)\` | \`runtime.recordArtifactObservation()\` |
-| \`reviewBrandMemorySignal(wsId, entryId, approved, reviewedBy)\` | \`runtime.review()\` |
-| \`resolveBrandCognitionContext(request)\` | \`runtime.resolve()\` |
-| \`getBrandSummary({ workspaceId, personaId? })\` | \`runtime.getBrandSummary()\` |
-
+${CPL_PROXY_SURFACE}
 `;
 }
 
@@ -398,6 +405,11 @@ function renderActiveTechDebt() {
 
 ### Resolved (Cleanup Sprint 2)
 
+*Historical record — these fixes were made against \`@brandos/brand-intelligence\`
+while it still existed. That package was fully deleted afterward (see "Resolved
+(Platform Split)" below); these rows are kept as-is for audit history, not because
+BI concepts are still current.*
+
 | Fix | Resolution |
 |---|---|
 | Fix C1 — ARL → OCL | globalThis bridge |
@@ -410,6 +422,15 @@ function renderActiveTechDebt() {
 | WS2 — OCL importing governance-config | structural constraints moved to contracts |
 | WS3 — PersonaContributor BI delegation shim | removed; self-contained |
 | apps/web BI direct imports | all 4 routes replaced with CPL proxies |
+
+### Resolved (Platform Split)
+
+| Fix | Resolution |
+|---|---|
+| \`@brandos/brand-intelligence\` fully deleted | replaced by \`@brandos/cognition-client\` (stateless HTTP adapter to IntelligenceOS) |
+| RULE-1/2/3/6/7 boundary checks vacuous post-deletion | rewritten (v6) to check \`@brandos/cognition-client\` — see check-boundaries.mjs header |
+| \`@platform/\` scope invisible to import/dep scanners | \`RECOGNIZED_SCOPES\`/\`isInternalPackage()\` added to package-registry.mjs; all scanners updated |
+| 3 tables (\`brand_memory_entries\`, \`identity_signals\`, \`identity_versions\`) orphaned | marked \`orphaned: true\` in table-ownership.mjs; human decision (archive vs. migrate) still open — Gap G-B2 |
 
 `;
 }
@@ -432,7 +453,7 @@ function main() {
     '---\n',
     renderGenerationFlow(),
     renderCoreAggregates(tables),
-    renderBrandIntelligenceModel(tables),
+    renderCognitionClientModel(tables),
     renderRuntimeConfigModel(tables),
     renderGovernanceModel(tables),
     renderTelemetryModel(tables),

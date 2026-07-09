@@ -20,7 +20,7 @@ import {
   getBrandosDeps, renderTimestamp,
 } from './shared/context-utils.mjs';
 import {
-  CPL_BI_ALLOWED_SYMBOLS, PACKAGE_RESTRICTIONS, CPL_PROXY_SURFACE,
+  CPL_COGNITION_ALLOWED_SYMBOLS, PACKAGE_RESTRICTIONS, CPL_PROXY_SURFACE,
 } from './shared/package-restrictions.mjs';
 import { join, resolve, relative } from 'path';
 import { writeFileSync } from 'fs';
@@ -122,14 +122,15 @@ function renderPackage({ name, dir, app, layerIndex, deps, exps }, dependentMap)
     lines.push(`- **Brand memory proxies:** \`src/brand-memory/service.ts\``);
     lines.push(`- **Orchestrator:** \`CPLOrchestrator.orchestrate()\``);
     lines.push(`- **Artifact pipeline:** \`executeArtifactPipeline()\` → \`globalArtifactEngine.compileAndGovern()\``);
-  } else if (name === '@brandos/brand-intelligence') {
-    lines.push(`- **Runtime entry:** \`initBrandIntelligenceRuntime()\` / \`getGlobalBrandIntelligenceRuntime()\``);
-    lines.push(`- **Factories:** \`createDegradedCognitionContext()\`, \`createBrandSignalRepository()\``);
-    lines.push(`- **V2 tables:** \`brand_memory_entries\`, \`identity_signals\`, \`identity_versions\``);
+  } else if (name === '@brandos/cognition-client') {
+    lines.push(`- **Singleton accessors:** \`getGlobalCognitionClient()\`, \`initCognitionClient()\`, \`setGlobalCognitionClient()\``);
+    lines.push(`- **Degraded fallback:** \`createDegradedCognitionContext()\` — never a concrete provider class`);
+    lines.push(`- **Knowledge ingest:** \`getGlobalKnowledgeIngestClient()\`, \`initKnowledgeIngestClient()\``);
+    lines.push(`- **Note:** replaces the deleted \`@brandos/brand-intelligence\` package. Holds no data itself — pure HTTP adapter to IntelligenceOS (separate repository). See \`.context/runtime_model.generated.md\` § Cognition Client Model for the 3 orphaned tables (\`brand_memory_entries\`, \`identity_signals\`, \`identity_versions\`) this replacement left behind with no current writer.`);
   } else if (name === '@brandos/output-control-layer') {
     lines.push(`- **Pre-generation:** \`ContractAssemblerFactory.create()\` → \`compilePromptFromContract()\``);
     lines.push(`- **Post-generation:** \`normalizeOutput()\` → \`compile*Artifact()\` → \`ArtifactV2\``);
-    lines.push(`- **PersonaContributor:** fully self-contained (WS3 — no BI delegation)`);
+    lines.push(`- **PersonaContributor:** fully self-contained (WS3 — no cognition-client delegation)`);
   } else if (name === '@brandos/governance-layer') {
     lines.push(`- **Text scoring:** \`evaluateGovernance(input)\``);
     lines.push(`- **Structured validation:** \`validateCarouselArtifact()\`, \`validateDeckArtifact()\`, \`validateReportArtifact()\``);
