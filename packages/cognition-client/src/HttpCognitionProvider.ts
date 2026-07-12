@@ -20,7 +20,6 @@ import {
   type CognitionHealth,
   type CognitionProvider,
   type CognitionRequest,
-  type CognitionReviewDecision,
   type CognitionSummary,
   type ObservationInput,
 } from '@platform/cognition-contract'
@@ -36,9 +35,9 @@ export interface HttpCognitionProviderConfig {
   /** Request timeout in ms. Default 2500 — the resolve path is synchronous
    *  in a user-facing generation request, so this must stay tight. */
   readonly timeoutMs?: number
-  /** Max retry attempts for resolveCognitionContext only. observe()/review()
-   *  are not retried by this client — callers that need at-least-once
-   *  delivery should queue them upstream. */
+  /** Max retry attempts for resolveCognitionContext only. observe() is not
+   *  retried by this client — callers that need at-least-once delivery
+   *  should queue it upstream. */
   readonly maxRetries?: number
 }
 
@@ -78,10 +77,6 @@ export class HttpCognitionProvider implements CognitionProvider {
         error: (err as Error).message,
       })
     }
-  }
-
-  async review(decision: CognitionReviewDecision): Promise<void> {
-    await this._post<void>('/v1/cognition/review', decision)
   }
 
   async summarizeCognition(workspaceId: string): Promise<CognitionSummary> {
@@ -143,45 +138,14 @@ export class HttpCognitionProvider implements CognitionProvider {
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS)
 
     try {
-      const url = `${this.config.baseUrl}${path}`
-      const authHeader = `Bearer ${this.config.apiKey}`
-
-      // TEMP DIAGNOSTIC — remove after root cause confirmed. Confirms
-      // whether the Authorization header is actually attached to the
-      // outgoing request, and whether fetch followed a redirect (which
-      // strips Authorization on any scheme/host/port change per the
-      // Fetch spec — the likely explanation for the header arriving as
-      // `undefined` on the IntelligenceOS side).
-      console.warn('[cognition-client][auth-diag] outgoing request', {
-        url,
-        baseUrl: this.config.baseUrl,
-        authHeaderPresent: Boolean(this.config.apiKey),
-        authHeaderLength: authHeader.length,
-      })
-
-      const res = await fetch(url, {
+      const res = await fetch(`${this.config.baseUrl}${path}`, {
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: authHeader,
+          Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
-      })
-
-      // TEMP DIAGNOSTIC — remove after root cause confirmed.
-      console.warn('[cognition-client][auth-diag] response', {
-        status: res.status,
-        redirected: res.redirected,
-        finalUrl: res.url,
-        requestedUrl: url,
-        originChanged: (() => {
-          try {
-            return new URL(res.url).origin !== new URL(url).origin
-          } catch {
-            return null
-          }
-        })(),
       })
 
       if (!res.ok) {

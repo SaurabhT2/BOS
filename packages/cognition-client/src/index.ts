@@ -52,7 +52,6 @@ export type {
   ObservationInput,
   CognitionSummary,
   CognitionHealth,
-  CognitionReviewDecision,
   CognitionProvider,
 } from '@platform/cognition-contract'
 export { createDegradedCognitionContext } from '@platform/cognition-contract'

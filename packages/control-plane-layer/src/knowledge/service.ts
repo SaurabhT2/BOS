@@ -4,7 +4,7 @@
  * Milestone 3, Phase 1 (Knowledge API).
  *
  * CPL proxy for knowledge ingestion — the same role
- * `brand-memory/service.ts` plays for cognition observation/review. Exists
+ * `brand-memory/service.ts` plays for cognition observation. Exists
  * because `packages/cognition-client/src/global-knowledge-client.ts`'s
  * header states the same routing rule brand-memory/service.ts enforces:
  * apps/web must not import @brandos/cognition-client directly, it must go

@@ -94,7 +94,7 @@ export interface GenerationRequest {
   /**
    * @deprecated PLATFORM SPLIT: no longer read. CognitionRequest accepts
    * only { workspaceId, taskType } — see
-   * packages/cognition-contract/README.md, "Known contract gaps", item 2.
+   * packages/cognition-contract/README.md, "Known contract gaps", item 1.
    * Kept on the type for backward compatibility; the orchestrator ignores it.
    */
   readonly persona?: Readonly<Record<string, unknown>>

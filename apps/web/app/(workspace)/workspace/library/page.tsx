@@ -389,8 +389,7 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
                 </div>
               )}
               <p className="text-[10px] text-gray-600 pt-1 border-t border-gray-800">
-                These signals from this {isImage(asset.mime_type) ? 'image' : 'document'} feed into your Brand Intelligence →
-                {isImage(asset.mime_type) ? ' Visual Identity.' : ' Signals and Visual Identity.'}
+                {isImage(asset.mime_type) ? 'This image feeds' : 'This document feeds'} into your Brand Intelligence → Visual Identity.
                 <button
                   onClick={() => window.open('/workspace/brand?tab=visual', '_blank')}
                   className="ml-1 text-cyan-600 hover:text-cyan-400 underline"

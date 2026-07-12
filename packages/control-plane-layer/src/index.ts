@@ -182,13 +182,14 @@ export type { TelemetrySnapshot, TelemetryStats } from './telemetry/persistent-t
 export type { OverrideMode, TaskType, RuntimeMode } from '@brandos/contracts'
 
 // ─── Brand Memory proxy (Cleanup Sprint 2) ────────────────────────────────────
-// apps/web routes must use these instead of importing @brandos/brand-intelligence
-// directly. Enforces the apps/web → CPL → BI routing rule.
+// apps/web routes must use these instead of importing @brandos/cognition-client
+// directly. Enforces the apps/web → CPL → cognition-client routing rule.
+// Option B: getBrandMemory (raw memory read) and reviewBrandMemorySignal
+// (review() passthrough) are removed — BrandOS no longer owns raw-signal
+// review; see brand-memory/service.ts header.
 
 export {
-  getBrandMemory,
   recordBrandMemoryObservation,
-  reviewBrandMemorySignal,
   resolveBrandCognitionContext,
   getBrandSummary,
 } from './brand-memory/service'

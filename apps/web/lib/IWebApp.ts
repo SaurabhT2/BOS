@@ -73,7 +73,7 @@ export const ROUTE_INVENTORY: RouteDescriptor[] = [
   // /api/control-plane/routing REMOVED — in-memory store, no pipeline connection, unauthenticated
   // /api/control-plane/routing/audit REMOVED — always returned empty audit log
   { path: '/api/v2/runtime/providers/:id/test',   methods: ['POST'],             authRequired: true,  adminRequired: true,  runtimeExport: true,  pipelineEntry: 'admin' },
-  { path: '/api/control-plane/brand-memory',      methods: ['GET', 'POST', 'PATCH'], authRequired: true, adminRequired: false, runtimeExport: true, pipelineEntry: 'observability' },
+  { path: '/api/control-plane/brand-memory',      methods: ['POST'], authRequired: true, adminRequired: false, runtimeExport: true, pipelineEntry: 'observability' },
   { path: '/api/control-plane/experiments',       methods: ['GET', 'POST', 'PATCH'], authRequired: true, adminRequired: false, runtimeExport: true, pipelineEntry: 'observability' },
   { path: '/api/control-plane/prompt-library',    methods: ['GET', 'POST', 'PATCH', 'DELETE'], authRequired: true, adminRequired: false, runtimeExport: true, pipelineEntry: 'observability' },
   { path: '/api/control-plane/score-history',     methods: ['GET', 'POST'],      authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'observability', notes: 'Backing store (globalScoreHistory) is an in-memory singleton, not persisted — resets on redeploy. Auth check was missing entirely prior to redesign cleanup; now scopes strictly to session workspaceId.' },

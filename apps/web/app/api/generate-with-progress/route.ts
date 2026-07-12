@@ -181,13 +181,24 @@ export async function GET(req: NextRequest) {
               // degraded complete event instead of an error event.
               // The SSE client reads recoverable_issues to display the warning banner.
               if (pipelineErr.isDegradedRecoverable && pipelineErr.lastValidArtifact) {
+                // RESPONSE-CONTRACT-001 (P0 fix): the success event above uses
+                // `result.content` to carry the artifact; this degraded event
+                // previously used `result.artifact` instead. The frontend's
+                // SSE handler (routeResult() in workspace/create/page.tsx)
+                // only reads `raw.content` (with a `raw.result` fallback for
+                // some formats, but never `raw.artifact`), so a degraded
+                // completion was indistinguishable from a missing artifact —
+                // see the runtime investigation, Issue D. Using `content`
+                // here makes both completion paths structurally identical;
+                // recoverable_issues / recoverable_reason remain available
+                // for a future UI banner.
                 controller.enqueue(sseData({
                   stage:    'complete',
                   progress: 100,
                   message:  'Done (with recoverable issues)',
                   result: {
                     format,
-                    artifact:           pipelineErr.lastValidArtifact,
+                    content:            pipelineErr.lastValidArtifact,
                     // P3-RECOVERY: UI reads this to show "⚠ Generated with recoverable issues"
                     recoverable_issues: true,
                     recoverable_reason: pipelineErr.reason,

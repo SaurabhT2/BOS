@@ -10,15 +10,21 @@
  * names are kept stable where a direct equivalent exists, so
  * apps/web routes did not need to change their imports.
  *
+ * Option B (cognition-consumer split): BrandOS no longer owns raw-memory
+ * reading or raw-signal review — both belong to IntelligenceOS. This file
+ * previously also exported getBrandMemory() (no CognitionProvider
+ * equivalent; always threw) and reviewBrandMemorySignal() (a passthrough
+ * for CognitionProvider.review()). Both are removed along with review()
+ * itself from the BrandOS-local CognitionProvider contract — see
+ * @platform/cognition-contract's CognitionProvider.ts.
+ *
  * Enforces the apps/web → CPL → cognition-client routing rule:
  *   apps/web must NOT import @brandos/cognition-client directly.
  *   All cognition access routes through CPL, which is the correct
  *   integration seam.
  *
  * Exported from @brandos/control-plane-layer/src/index.ts:
- *   getBrandMemory
  *   recordBrandMemoryObservation
- *   reviewBrandMemorySignal
  *   resolveBrandCognitionContext
  *   getBrandSummary
  *
@@ -40,31 +46,6 @@ import { getGlobalCognitionClient } from '@brandos/cognition-client'
 import type { IObservationEvent } from '@brandos/contracts'
 
 /**
- * getBrandMemory — NOT SUPPORTED under the new CognitionProvider contract.
- *
- * PLATFORM SPLIT / KNOWN GAP: CognitionProvider has no operation that
- * returns a list of raw or reviewable memory signals — by design, per
- * COGNITION_CONTRACT_SPEC.md §4's exclusion of raw/unconsolidated signals
- * from anything BrandOS can see. This function's caller
- * (apps/web's brand-memory route, feeding the /workspace/brand review UI)
- * has no working replacement yet.
- *
- * Throws rather than silently returning an empty list, so the gap is
- * visible at the API boundary instead of presenting as "you have no brand
- * memory yet." See packages/cognition-contract/README.md, "Known contract
- * gaps", item 1, for the decision this is waiting on.
- */
-export async function getBrandMemory(
-  _workspaceId: string,
-  _classification?: 'A' | 'B' | 'C',
-): Promise<never> {
-  throw new Error(
-    '[control-plane-layer] getBrandMemory() has no equivalent in CognitionProvider. ' +
-    'See packages/cognition-contract/README.md, "Known contract gaps", item 1.'
-  )
-}
-
-/**
  * recordBrandMemoryObservation — report a scored generation outcome.
  * Proxy for: CognitionProvider.observe()
  */
@@ -77,26 +58,12 @@ export async function recordBrandMemoryObservation(
 }
 
 /**
- * reviewBrandMemorySignal — pass through a human review decision.
- * Proxy for: CognitionProvider.review()
- */
-export async function reviewBrandMemorySignal(
-  workspaceId: string,
-  entryId: string,
-  approved: boolean,
-  reviewedBy: string,
-): Promise<void> {
-  const client = getGlobalCognitionClient()
-  return client.review({ workspaceId, entryId, approved, reviewedBy })
-}
-
-/**
  * resolveBrandCognitionContext — resolve the CognitionContext for generation.
  * Proxy for: CognitionProvider.resolveCognitionContext()
  *
  * PLATFORM SPLIT / KNOWN GAP: the request shape is now `{ workspaceId,
  * taskType? }` only — no `persona`/`brandContext` payload is forwarded.
- * See packages/cognition-contract/README.md, "Known contract gaps", item 2.
+ * See packages/cognition-contract/README.md, "Known contract gaps", item 1.
  */
 export async function resolveBrandCognitionContext(request: {
   workspaceId: string

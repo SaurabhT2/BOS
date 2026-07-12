@@ -57,10 +57,8 @@ import {
   CPLOrchestrator,
   AdminSettingsService,
 
-  // Brand memory proxy (Cleanup Sprint 2)
-  getBrandMemory,
+  // Brand memory proxy (Option B — cognition-consumer split)
   recordBrandMemoryObservation,
-  reviewBrandMemorySignal,
   resolveBrandCognitionContext,
   getBrandSummary,
 
@@ -73,28 +71,28 @@ import {
 } from '@brandos/control-plane-layer'
 ```
 
-### Brand Memory Proxy Functions (NEW — Cleanup Sprint 2)
+### Brand Memory Proxy Functions
 
 These are exported from `src/brand-memory/service.ts` and re-exported from `src/index.ts`.
 
+Option B (cognition-consumer split): `getBrandMemory` (raw signal read) and
+`reviewBrandMemorySignal` (review-decision passthrough) have been removed.
+BrandOS no longer reads raw brand-memory signals or reviews them — that is
+IntelligenceOS's responsibility. `review()` was also removed from the
+underlying `CognitionProvider` contract.
+
 ```typescript
-// GET brand memory signals for a workspace
-getBrandMemory(workspaceId: string, classification?: SignalClassification): Promise<IBrandMemorySignal[]>
-
 // Record an artifact observation into brand memory
-recordBrandMemoryObservation(input: IArtifactObservationRequest | IObservationEvent): Promise<void>
-
-// Update review status of a brand memory signal
-reviewBrandMemorySignal(workspaceId: string, entryId: string, approved: boolean, reviewedBy: string): Promise<void>
+recordBrandMemoryObservation(input: IObservationEvent): Promise<void>
 
 // Resolve brand cognition context for generation
-resolveBrandCognitionContext(request: IBrandCognitionRequest): Promise<IBrandCognitionContext>
+resolveBrandCognitionContext(request: { workspaceId: string; taskType?: string }): Promise<CognitionContext>
 
 // Get brand summary for display
-getBrandSummary(params: { workspaceId: string; personaId?: string }): Promise<BrandSummary>
+getBrandSummary(params: { workspaceId: string; personaId?: string }): Promise<CognitionSummary>
 ```
 
-**Rule:** `apps/web` routes must use these proxy functions. Direct import of `@brandos/brand-intelligence` in `apps/web` is forbidden.
+**Rule:** `apps/web` routes must use these proxy functions. Direct import of `@brandos/cognition-client` in `apps/web` is forbidden.
 
 ---
 
@@ -197,17 +195,19 @@ apps/web POST /api/generate
   ← CPLResponse { artifact, score, governed, activityLog }
 ```
 
-### brand-memory/service.ts (NEW)
+### brand-memory/service.ts
 
 ```typescript
 // Routing rule enforced by this module:
-//   apps/web → CPL proxy → @brandos/brand-intelligence
+//   apps/web → CPL proxy → @brandos/cognition-client → IntelligenceOS
 //
-// apps/web must NOT import @brandos/brand-intelligence directly.
+// apps/web must NOT import @brandos/cognition-client directly.
+//
+// Option B (cognition-consumer split): getBrandMemory (raw signal read) and
+// reviewBrandMemorySignal (review-decision passthrough) have been removed.
+// BrandOS no longer reads or reviews raw brand-memory signals.
 
-export async function getBrandMemory(workspaceId, classification?)
 export async function recordBrandMemoryObservation(input)
-export async function reviewBrandMemorySignal(workspaceId, entryId, approved, reviewedBy)
 export async function resolveBrandCognitionContext(request)
 export async function getBrandSummary(params)
 ```
@@ -222,9 +222,9 @@ export async function getBrandSummary(params)
 
 **I-3 — BI concrete class ban.** Use `createDegradedCognitionContext()` and `createBrandSignalRepository()` factories (Fix C3, Fix C4).
 
-**I-4 — Brand memory proxy is the BI gateway.** `apps/web` routes must use proxy functions from this package, not import BI directly.
+**I-4 — Brand memory proxy is the cognition-client gateway.** `apps/web` routes must use proxy functions from this package, not import `@brandos/cognition-client` directly.
 
-**I-5 — Signal learning is fire-and-forget.** `recordBrandMemoryObservation()` called after returning response. Failures caught and logged.
+**I-5 — Observation reporting is fire-and-forget.** `recordBrandMemoryObservation()` called after returning response. Failures caught and logged. There is no raw-signal review passthrough on the BrandOS side (Option B) — `review()` was removed from the underlying `CognitionProvider` contract.
 
 **I-6 — Internal BCs must not cross-import.** `brand-memory/`, `experiments/`, `scoring/`, etc. are soft boundaries and future extraction candidates.
 

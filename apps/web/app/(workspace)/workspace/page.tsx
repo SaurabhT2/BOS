@@ -6,15 +6,6 @@
  * Per brandos_redesign_strategic_completion.md §6:
  *  - Brand pulse is the hero, not a footnote — shown with trend, not just
  *    a snapshot, so the compounding-memory story is visible.
- *  - A one-line "what BrandOS learned this week" digest makes the learning
- *    loop emotionally visible.
- *  - The review queue unifies two things that would otherwise read as two
- *    separate "stuff waiting on me" surfaces (§3): pending brand-memory
- *    signals (from /api/control-plane/brand-memory) and freshly-generated
- *    content not yet exported (closest real analog to "needs your
- *    attention" — see notes/cleanup-candidates.md for why this isn't a
- *    literal `pending_review` campaign status, which doesn't exist in the
- *    schema despite the rollout plan's phrasing).
  *  - Quick-create and Recent are utility, below the fold.
  *  - "Active campaigns" row (between quick-create and pulse, per §6) is
  *    intentionally omitted: it depends on Campaign Lite's shared
@@ -22,6 +13,12 @@
  *    (see /api/campaigns route notes). Showing it now would mean either a
  *    fake empty state or silently-wrong grouping — add this row when that
  *    column ships.
+ *
+ * Architecture (Option B — cognition-consumer split): this page no longer
+ * reads or displays raw brand-memory signals or a pending-signal review
+ * queue — that surface belonged to IntelligenceOS's raw-signal review
+ * workflow, which BrandOS no longer owns. The "needs your attention" queue
+ * now covers only content BrandOS itself generated and hasn't exported yet.
  *
  * WorkspaceNav (Phase 1) now renders the persistent header — this page no
  * longer owns its own logo/logout chrome.
@@ -42,19 +39,6 @@ interface PulseAggregation {
   period?: string
   avg_score?: number
   count?: number
-}
-
-interface BrandMemoryEntry {
-  id?: string
-  entry_id?: string
-  classification?: 'A' | 'B' | 'C'
-  confidence?: number
-  status?: string
-  summary?: string
-  signal?: string
-  description?: string
-  topic?: string
-  created_at?: string
 }
 
 interface CampaignRow {
@@ -180,20 +164,18 @@ export default function HomePage() {
 
   const [loading, setLoading] = React.useState(true)
   const [pulseAgg, setPulseAgg] = React.useState<PulseAggregation[]>([])
-  const [pendingSignals, setPendingSignals] = React.useState<BrandMemoryEntry[]>([])
   const [recentCampaigns, setRecentCampaigns] = React.useState<CampaignRow[]>([])
   const [error, setError] = React.useState<string | null>(null)
   const [planMyWeekOpen, setPlanMyWeekOpen] = React.useState(false)
   const [pulseTipOpen, setPulseTipOpen] = React.useState(false)
   // Workspace intelligence summary stats
   const [wsStats, setWsStats] = React.useState<{
-    signalCount: number | null
     personaCount: number | null
     assetCount: number | null
-  }>({ signalCount: null, personaCount: null, assetCount: null })
+  }>({ personaCount: null, assetCount: null })
 
   // P2.16 — Onboarding progress: tracks how much of the brand is configured.
-  // Derived from persona count, signal count, and asset count — no new API.
+  // Derived from persona count and asset count — no new API.
   const [onboardingDone, setOnboardingDone] = React.useState<boolean>(false)
 
   // Onboarding redirect: this used to live here as a useEffect, but an
@@ -214,9 +196,8 @@ export default function HomePage() {
       setLoading(true)
       setError(null)
       try {
-        const [pulseRes, memoryRes, campaignsRes] = await Promise.allSettled([
+        const [pulseRes, campaignsRes] = await Promise.allSettled([
           fetch('/api/control-plane/score-history?aggregate=true&granularity=week&limit=200'),
-          fetch('/api/control-plane/brand-memory'),
           fetch('/api/campaigns?limit=8'),
         ])
 
@@ -234,10 +215,9 @@ export default function HomePage() {
           Promise.all([personaCount, assetCount]).then(([pc, ac]) => {
             if (!cancelled) {
               setWsStats(s => ({ ...s, personaCount: pc, assetCount: ac }))
-              // Onboarding is "complete" once user has a voice + signal + asset
-              const signals = // will be updated by the memory check below
-                (pc ?? 0) > 0 // voice check — defer signal/asset until both resolve
-              void signals // used below when signals are counted
+              // Onboarding complete once the user has a voice and an asset —
+              // the "review a signal" step no longer exists on BrandOS's side.
+              if ((pc ?? 0) > 0 && (ac ?? 0) > 0) setOnboardingDone(true)
             }
           }).catch(() => {})
         }).catch(() => {})
@@ -247,21 +227,6 @@ export default function HomePage() {
         if (pulseRes.status === 'fulfilled' && pulseRes.value.ok) {
           const data = await pulseRes.value.json()
           setPulseAgg(Array.isArray(data) ? data : [])
-        }
-
-        if (memoryRes.status === 'fulfilled' && memoryRes.value.ok) {
-          const data = await memoryRes.value.json()
-          // getBrandMemory's exact shape isn't confirmable from apps/web alone
-          // (see route file) — handle both a bare array and a {entries:[]} wrap.
-          const entries: BrandMemoryEntry[] = Array.isArray(data) ? data : (data?.entries ?? [])
-          setPendingSignals(entries.filter(e => e.status === 'pending_review'))
-          // Track approved signal count for workspace intelligence summary
-          const approvedCount = entries.filter(e => e.status === 'approved').length
-          if (!cancelled) {
-            setWsStats(s => ({ ...s, signalCount: approvedCount }))
-            // Onboarding complete: has at least 1 approved signal
-            if (approvedCount > 0) setOnboardingDone(true)
-          }
         }
 
         if (campaignsRes.status === 'fulfilled' && campaignsRes.value.ok) {
@@ -389,7 +354,6 @@ export default function HomePage() {
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">What moves it up:</p>
                 <ul className="text-xs text-gray-300 space-y-1">
-                  <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0">↑</span>Approving more brand signals in Intelligence → Signals</li>
                   <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0">↑</span>Uploading brand assets (logo, guidelines) to Library for analysis</li>
                   <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0">↑</span>Generating more content with Brand Memory enabled</li>
                 </ul>
@@ -399,37 +363,12 @@ export default function HomePage() {
               </p>
             </div>
           )}
-
-          {/* "What BrandOS learned this week" digest */}
-          {!loading && pendingSignals.length > 0 && (
-            <div className="mt-5 pt-5 border-t border-gray-800 flex items-center gap-2 text-sm text-gray-300">
-              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>
-                BrandOS picked up <strong className="text-white">{pendingSignals.length}</strong> new
-                signal{pendingSignals.length === 1 ? '' : 's'} from your recent content —
-                <button
-                  onClick={() => router.push('/workspace/brand?tab=signals')}
-                  className="ml-1 text-cyan-400 hover:text-cyan-300 font-medium"
-                >
-                  review them in Intelligence
-                </button>
-                {' '}to improve future generations.
-              </span>
-            </div>
-          )}
         </section>
 
         {/* ── Workspace Intelligence Summary ──────────────────────────────── */}
-        {!loading && (wsStats.signalCount !== null || wsStats.personaCount !== null || wsStats.assetCount !== null) && (
-          <section className="mb-8 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {!loading && (wsStats.personaCount !== null || wsStats.assetCount !== null) && (
+          <section className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              {
-                label: 'Approved signals',
-                value: wsStats.signalCount ?? '—',
-                sub: 'shaping every generation',
-                href: '/workspace/brand?tab=signals',
-                color: 'text-cyan-400',
-              },
               {
                 label: 'Active voices',
                 value: wsStats.personaCount ?? '—',
@@ -464,7 +403,6 @@ export default function HomePage() {
             { label: 'Create a voice', done: (wsStats.personaCount ?? 0) > 0, href: '/workspace/brand?tab=voice' },
             { label: 'Upload a brand asset', done: (wsStats.assetCount ?? 0) > 0, href: '/workspace/library' },
             { label: 'Generate your first piece', done: recentCampaigns.length > 0, href: '/workspace/create' },
-            { label: 'Review a brand signal', done: (wsStats.signalCount ?? 0) > 0, href: '/workspace/brand?tab=signals' },
           ]
           const completedCount = steps.filter(s => s.done).length
           const pct = Math.round((completedCount / steps.length) * 100)
@@ -508,33 +446,13 @@ export default function HomePage() {
           )
         })()}
 
-        {/* ── Unified review queue ───────────────────────────────────────── */}
-        {!loading && (pendingSignals.length > 0 || awaitingExport.length > 0) && (
+        {/* ── Awaiting export ──────────────────────────────────────────────── */}
+        {!loading && awaitingExport.length > 0 && (
           <section className="mb-8">
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
               Needs your attention
             </h2>
             <div className="rounded-xl border border-gray-800 divide-y divide-gray-800 overflow-hidden">
-              {pendingSignals.slice(0, 4).map((entry, i) => (
-                <button
-                  key={entry.id ?? entry.entry_id ?? i}
-                  onClick={() => router.push('/workspace/brand?tab=signals')}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-900/60 transition-colors"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-cyan-950 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-4 h-4 text-cyan-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      {entry.summary ?? entry.signal ?? entry.description ?? entry.topic ?? 'New brand signal'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Brand signal {entry.classification ? `\u00b7 ${entry.classification === 'A' ? 'strong' : entry.classification === 'B' ? 'emerging' : 'weak'} pattern` : ''} \u00b7 tap to review in Intelligence
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-gray-600 shrink-0" />
-                </button>
-              ))}
               {awaitingExport.slice(0, 4).map(c => (
                 <button
                   key={c.id}

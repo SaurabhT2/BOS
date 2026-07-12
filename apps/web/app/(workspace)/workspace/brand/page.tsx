@@ -3,13 +3,14 @@
 /**
  * Brand — the workspace where users see (and influence) what BrandOS knows.
  *
- * Per brandos_redesign_strategic_completion.md §3 and §8, Final IA:
- *   Profile / Learned signals (actionable) / Visual identity / Voice (multi-persona switcher)
+ * Architecture (Option B — cognition-consumer split): BrandOS no longer
+ * exposes, reviews, or reasons over raw learning signals or raw memory.
+ * IntelligenceOS owns learning, memory, and signal review; BrandOS consumes
+ * only synthesized cognition through the CognitionProvider abstraction
+ * (resolveCognitionContext / observe / summarizeCognition / checkHealth).
  *
- * §3: "Learned signals is an action queue (approve/reject)... fundamentally
- * different from the other two tabs and should feel like an inbox, not a
- * read-only panel." Implemented below using the real PATCH contract on
- * /api/control-plane/brand-memory: { entry_id, approved, reviewed_by }.
+ * Final IA: Profile / Visual identity / Voice (multi-persona switcher) /
+ * To learn (gap detection over cognition-safe data only).
  *
  * §1: "Voice should stay a switchable, multi-valued sub-entity of Brand,
  * not one field" — don't flatten Persona into Brand. Implemented as its
@@ -26,36 +27,18 @@ import * as React from 'react'
 import { useAuth } from '@brandos/auth'
 import { useSearchParams, useRouter } from 'next/navigation'
 import {
-  Brain, Save, RefreshCw, Sparkles, Check, X, Plus,
-  Palette, Mic2, User, ChevronRight, Clock, TrendingUp,
-  BookOpen, AlertCircle, ArrowRight, BarChart2, Target,
+  Brain, Save, RefreshCw, Palette, Mic2, User, ChevronRight,
+  Plus, Check, X, BookOpen, AlertCircle, ArrowRight, Target,
 } from 'lucide-react'
 
-type Tab = 'profile' | 'signals' | 'visual' | 'voice' | 'timeline' | 'learning'
+type Tab = 'profile' | 'visual' | 'voice' | 'learning'
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }>; description: string }[] = [
   { id: 'profile',  label: 'Identity',  icon: User,      description: 'Your brand fundamentals — tone, audience, positioning' },
-  { id: 'signals',  label: 'Signals',   icon: Sparkles,  description: 'What BrandOS has learned from your content' },
   { id: 'visual',   label: 'Visual',    icon: Palette,   description: 'Colors and typography learned from your assets' },
   { id: 'voice',    label: 'Voices',    icon: Mic2,      description: 'Named personas BrandOS can write as' },
-  { id: 'timeline', label: 'Timeline',  icon: Clock,     description: 'How your brand has evolved over time' },
   { id: 'learning', label: 'To learn',  icon: Target,    description: 'Gaps in your brand profile and how to close them' },
 ]
-
-// Signal classification explanation — shown inline on signal cards
-const CLASSIFICATION_LABELS: Record<string, { label: string; description: string; color: string }> = {
-  A: { label: 'Strong signal',   description: 'High-confidence pattern seen repeatedly across your content', color: 'text-emerald-400 bg-emerald-950 border-emerald-800' },
-  B: { label: 'Emerging signal', description: 'Consistent pattern still building confidence over time',       color: 'text-blue-400 bg-blue-950 border-blue-800' },
-  C: { label: 'Weak signal',     description: 'Early observation — needs more content to confirm',           color: 'text-gray-400 bg-gray-800 border-gray-700' },
-}
-
-// Confidence interpretation — helps users understand what the % means
-function confidenceLabel(confidence: number): { label: string; color: string } {
-  if (confidence >= 80) return { label: 'Very confident', color: 'text-emerald-400' }
-  if (confidence >= 60) return { label: 'Confident',      color: 'text-blue-400' }
-  if (confidence >= 40) return { label: 'Building',       color: 'text-amber-400' }
-  return                       { label: 'Early learning', color: 'text-gray-400' }
-}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -72,23 +55,6 @@ interface MemoryData {
   total_copies?: number
   preferred_format?: string | null
   [key: string]: any
-}
-
-// getBrandMemory()'s exact shape isn't independently confirmable from
-// apps/web (it's a CPL proxy into @brandos/brand-intelligence) — coded
-// defensively against the field names the strategic doc §1 and the route's
-// own PATCH contract imply (classification, confidence, entry id, status).
-interface BrandMemoryEntry {
-  id?: string
-  entry_id?: string
-  classification?: 'A' | 'B' | 'C'
-  confidence?: number
-  status?: string
-  summary?: string
-  signal?: string
-  description?: string
-  topic?: string
-  created_at?: string
 }
 
 interface AssetWithVlm {
@@ -179,10 +145,8 @@ function BrandPageInner() {
         </div>
 
         {tab === 'profile' && <ProfileTab userId={user?.id} authLoading={authLoading} />}
-        {tab === 'signals' && <SignalsTab userId={user?.id} />}
         {tab === 'visual'  && <VisualIdentityTab />}
         {tab === 'voice'   && <VoiceTab onUpgrade={() => router.push('/workspace/settings/billing')} />}
-        {tab === 'timeline' && <SignalTimelineTab />}
         {tab === 'learning' && <LearningQueueTab />}
       </div>
     </div>
@@ -351,289 +315,7 @@ function ProfileTab({ userId, authLoading }: { userId?: string; authLoading: boo
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Tab 2: Learned signals — actionable inbox, NEW (didn't exist anywhere
-// before; the prior Memory page never called the brand-memory route at all).
-// ════════════════════════════════════════════════════════════════════════════
-
-function SignalsTab({ userId }: { userId?: string }) {
-  const [entries, setEntries] = React.useState<BrandMemoryEntry[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState<string | null>(null)
-  const [actioningId, setActioningId] = React.useState<string | null>(null)
-  const [expandedId, setExpandedId] = React.useState<string | null>(null)
-  const [showHistory, setShowHistory] = React.useState(false)
-
-  const load = React.useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/control-plane/brand-memory')
-      if (!res.ok) throw new Error('Failed to load signals')
-      const data = await res.json()
-      const list: BrandMemoryEntry[] = Array.isArray(data) ? data : (data?.entries ?? [])
-      setEntries(list)
-    } catch {
-      setError('Couldn\u2019t load learned signals. Try refreshing.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  React.useEffect(() => { void load() }, [load])
-
-  const review = async (entry: BrandMemoryEntry, approved: boolean) => {
-    const id = entry.entry_id ?? entry.id
-    if (!id || actioningId) return
-    setActioningId(id)
-    try {
-      const res = await fetch('/api/control-plane/brand-memory', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          entry_id: id,
-          approved,
-          reviewed_by: userId ?? 'unknown',
-        }),
-      })
-      if (!res.ok) throw new Error('Review failed')
-      setEntries(prev => prev.filter(e => (e.entry_id ?? e.id) !== id))
-    } catch {
-      setError('That action didn\u2019t go through. Try again.')
-    } finally {
-      setActioningId(null)
-    }
-  }
-
-  const pending = entries.filter(e => !e.status || e.status === 'pending_review')
-  const approved = entries.filter(e => e.status === 'approved')
-
-  return (
-    <div>
-      {/* Explainability callout — what signals are and why they matter */}
-      <div className="mb-5 p-4 rounded-xl bg-blue-950/30 border border-blue-900/50">
-        <div className="flex items-start gap-3">
-          <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-blue-200 mb-1">How signals work</p>
-            <p className="text-xs text-blue-300/80 leading-relaxed">
-              Every piece of content you generate teaches BrandOS something about your brand voice.
-              These signals are patterns it noticed — approve the ones that feel right, reject anything
-              that doesn&rsquo;t fit. Approved signals become part of every future generation.
-            </p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {Object.entries(CLASSIFICATION_LABELS).map(([cls, { label, description, color }]) => (
-                <span key={cls} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${color}`}>
-                  <span className="font-mono font-bold">{cls}</span>
-                  <span className="text-xs opacity-80">= {label}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-gray-400">
-          {pending.length > 0
-            ? `${pending.length} signal${pending.length === 1 ? '' : 's'} waiting for your review`
-            : 'Signal inbox'}
-        </p>
-        <button
-          onClick={() => void load()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-600 rounded-lg transition-colors shrink-0"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </button>
-      </div>
-
-      {error && (
-        <div className="mb-4 px-4 py-3 rounded-lg bg-red-950/40 border border-red-900 text-sm text-red-300">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-gray-500 py-12 justify-center">
-          <RefreshCw className="w-4 h-4 animate-spin" /> Loading…
-        </div>
-      ) : pending.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-800 p-10 text-center">
-          <Sparkles className="w-6 h-6 text-gray-600 mx-auto mb-2" />
-          <p className="text-sm text-gray-400">Nothing waiting on you right now.</p>
-          <p className="text-xs text-gray-600 mt-1">New signals show up here as BrandOS learns from your content.</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {pending.map((entry, i) => {
-            const id = entry.entry_id ?? entry.id ?? String(i)
-            const busy = actioningId === id
-            const isExpanded = expandedId === id
-            const cls = entry.classification
-            const clsInfo = cls ? CLASSIFICATION_LABELS[cls] : null
-            const conf = typeof entry.confidence === 'number' ? entry.confidence : null
-            const confInfo = conf != null ? confidenceLabel(Math.round(conf)) : null
-
-            return (
-              <div
-                key={id}
-                className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden"
-              >
-                <div className="flex items-center gap-3 p-4">
-                  <div className="w-9 h-9 rounded-lg bg-cyan-950 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-4 h-4 text-cyan-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">
-                      {entry.summary ?? entry.signal ?? entry.description ?? entry.topic ?? 'New brand signal'}
-                    </div>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {clsInfo && (
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium ${clsInfo.color}`}>
-                          {clsInfo.label}
-                        </span>
-                      )}
-                      {confInfo && conf != null && (
-                        <span className={`text-xs ${confInfo.color}`}>
-                          {confInfo.label} ({Math.round(conf)}%)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => setExpandedId(isExpanded ? null : id)}
-                      title="What does this mean?"
-                      className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-500 hover:text-gray-300 transition-colors text-xs"
-                    >
-                      Why?
-                    </button>
-                    <button
-                      onClick={() => void review(entry, true)}
-                      disabled={busy}
-                      title="Approve — add to brand profile"
-                      className="p-2 rounded-lg bg-gray-800 hover:bg-emerald-900/50 hover:text-emerald-400 disabled:opacity-40 transition-colors"
-                    >
-                      {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    </button>
-                    <button
-                      onClick={() => void review(entry, false)}
-                      disabled={busy}
-                      title="Reject — don't include in brand profile"
-                      className="p-2 rounded-lg bg-gray-800 hover:bg-red-900/50 hover:text-red-400 disabled:opacity-40 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expandable explainability panel */}
-                {isExpanded && (
-                  <div className="px-4 pb-4 pt-0 border-t border-gray-800 bg-gray-900/50">
-                    <div className="pt-3 space-y-2">
-                      {clsInfo && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-xs font-semibold text-gray-500 min-w-[4.5rem]">Signal type</span>
-                          <span className="text-xs text-gray-300">{clsInfo.description}</span>
-                        </div>
-                      )}
-                      {confInfo && conf != null && (
-                        <div className="flex items-start gap-2">
-                          <span className="text-xs font-semibold text-gray-500 min-w-[4.5rem]">Confidence</span>
-                          <span className="text-xs text-gray-300">
-                            {confInfo.label} at {Math.round(conf)}%.
-                            {conf >= 70
-                              ? ' This pattern has appeared consistently in your content.'
-                              : conf >= 40
-                              ? ' Seen in several pieces — confidence grows with more examples.'
-                              : ' Early observation — BrandOS saw this recently and is watching for it.'
-                            }
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex items-start gap-2">
-                        <span className="text-xs font-semibold text-gray-500 min-w-[4.5rem]">If you approve</span>
-                        <span className="text-xs text-gray-300">
-                          This signal gets added to your brand profile and influences every future generation.
-                        </span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-xs font-semibold text-gray-500 min-w-[4.5rem]">If you reject</span>
-                        <span className="text-xs text-gray-300">
-                          BrandOS dismisses this observation and won&rsquo;t apply it to future content.
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* ── Identity evolution: approved signals history ─────────────────── */}
-      {!loading && approved.length > 0 && (
-        <div className="mt-8">
-          <button
-            onClick={() => setShowHistory(h => !h)}
-            className="flex items-center gap-2 text-sm font-semibold text-gray-400 hover:text-white transition-colors mb-3 w-full text-left"
-          >
-            <ChevronRight className={`w-4 h-4 transition-transform ${showHistory ? 'rotate-90' : ''}`} />
-            Your brand profile — {approved.length} approved signal{approved.length === 1 ? '' : 's'}
-          </button>
-
-          {showHistory && (
-            <div className="space-y-2">
-              <p className="text-xs text-gray-500 mb-3">
-                These signals are active in your brand profile and influence every generation.
-                They were built up from your content over time.
-              </p>
-              {approved.map((entry, i) => {
-                const id = entry.entry_id ?? entry.id ?? String(i)
-                const cls = entry.classification
-                const clsInfo = cls ? CLASSIFICATION_LABELS[cls] : null
-                const conf = typeof entry.confidence === 'number' ? entry.confidence : null
-                return (
-                  <div
-                    key={id}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-gray-900/50 border border-gray-800/60"
-                  >
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-300 truncate">
-                        {entry.summary ?? entry.signal ?? entry.description ?? entry.topic ?? 'Approved signal'}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {clsInfo && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${clsInfo.color}`}>
-                            {clsInfo.label}
-                          </span>
-                        )}
-                        {conf != null && (
-                          <span className={`text-xs ${confidenceLabel(Math.round(conf)).color}`}>
-                            {Math.round(conf)}%
-                          </span>
-                        )}
-                        {entry.created_at && (
-                          <span className="text-xs text-gray-600">
-                            {new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Tab 3: Visual identity — read-only, derived from asset VLM analysis. NEW.
+// Tab 2: Visual identity — read-only, derived from asset VLM analysis.
 // ════════════════════════════════════════════════════════════════════════════
 
 function VisualIdentityTab() {
@@ -732,7 +414,7 @@ function VisualIdentityTab() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Tab 4: Voice — multi-persona switcher. NEW.
+// Tab 3: Voice — multi-persona switcher.
 // Strategic doc §1: "the schema already supports multiple named personas
 // per workspace... don't flatten this." Built against the real /api/persona
 // contract: GET lists all, POST with action create/switch/delete/update_profile.
@@ -928,122 +610,13 @@ function VoiceTab({ onUpgrade }: { onUpgrade: () => void }) {
   )
 }
 
-// ─── P3.21 — Signal Timeline tab ─────────────────────────────────────────────
-// Shows approved signals in chronological order as a visual timeline — how
-// the brand profile was built up over time from content observations.
-// Data source: GET /api/memory (brand_memory_entries with created_at).
-
-function SignalTimelineTab() {
-  const [entries, setEntries] = React.useState<BrandMemoryEntry[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError]     = React.useState<string | null>(null)
-
-  React.useEffect(() => {
-    fetch('/api/memory?limit=200')
-      .then(r => r.json())
-      .then(d => {
-        const all: BrandMemoryEntry[] = d.entries ?? d.data ?? []
-        const approved = all
-          .filter(e => e.status === 'approved')
-          .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())
-        setEntries(approved)
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-16 gap-3 text-gray-600">
-      <RefreshCw className="w-4 h-4 animate-spin" />
-      <span className="text-sm">Loading timeline…</span>
-    </div>
-  )
-
-  if (error) return (
-    <div className="bg-red-900/20 border border-red-800 rounded-xl p-4 text-sm text-red-400">{error}</div>
-  )
-
-  if (entries.length === 0) return (
-    <div className="text-center py-16 text-gray-600">
-      <Clock className="w-12 h-12 mx-auto mb-3 opacity-30" />
-      <p className="text-sm">No approved signals yet — approve some in the Signals tab to build your timeline.</p>
-    </div>
-  )
-
-  // Group by month
-  const byMonth = new Map<string, BrandMemoryEntry[]>()
-  for (const e of entries) {
-    const month = new Date(e.created_at ?? 0).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    if (!byMonth.has(month)) byMonth.set(month, [])
-    byMonth.get(month)!.push(e)
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 mb-6">
-        <TrendingUp className="w-4 h-4 text-cyan-400" />
-        <p className="text-sm text-gray-400">
-          {entries.length} signal{entries.length !== 1 ? 's' : ''} shaping your brand — in the order they were confirmed
-        </p>
-      </div>
-
-      <div className="relative">
-        {/* Vertical timeline spine */}
-        <div className="absolute left-[11px] top-0 bottom-0 w-px bg-gray-800" />
-
-        <div className="space-y-8 ml-8">
-          {[...byMonth.entries()].map(([month, monthEntries]) => (
-            <div key={month}>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 -ml-8 pl-6 relative">
-                <span className="absolute left-0 top-0.5 w-5 h-5 rounded-full bg-gray-800 border border-gray-700 flex items-center justify-center">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-                </span>
-                {month}
-              </p>
-              <div className="space-y-2">
-                {monthEntries.map(e => {
-                  const cls = CLASSIFICATION_LABELS[e.classification ?? '']
-                  // confidence is 0-1 in the actual type; multiply to get %
-                  const confPct = (e.confidence ?? 0) * 100
-                  const conf = confidenceLabel(confPct)
-                  // signal text: prefer signal, fall back through summary → description → topic
-                  const text = e.signal ?? e.summary ?? e.description ?? e.topic ?? '—'
-                  return (
-                    <div key={e.id ?? e.entry_id} className="relative flex items-start gap-3">
-                      <span className="absolute -left-[29px] top-2 w-3 h-3 rounded-full bg-emerald-600/40 border border-emerald-500/60 shrink-0" />
-                      <div className="flex-1 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <p className="text-sm text-gray-200 leading-snug">{text}</p>
-                          {cls && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full border shrink-0 ${cls.color}`}>
-                              {cls.label}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                          <span className={conf.color}>{conf.label}</span>
-                          <span>·</span>
-                          <span>{new Date(e.created_at ?? 0).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                          <span>·</span>
-                          <span>{Math.round(confPct)}% confidence</span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── P3.23 — Learning Queue tab ───────────────────────────────────────────────
 // Shows what's missing from the brand profile and how to fix each gap.
-// Derived entirely from what exists (persona count, signal count, asset count,
-// profile fields) — no new API. Pure client-side gap detection.
+// Derived entirely from cognition-safe, already-synthesized data — persona
+// count, asset count, and the display-ready CognitionSummary fields exposed
+// via GET /api/memory (CognitionProvider.summarizeCognition, proxied through
+// control-plane-layer). No raw signals or memory entries are read or
+// reasoned over here; gap detection is pure client-side arithmetic over
+// finished judgments IntelligenceOS already produced.
 
 interface LearningItem {
   id: string
@@ -1056,23 +629,22 @@ interface LearningItem {
 }
 
 function LearningQueueTab() {
-  const [signals,  setSignals]  = React.useState<BrandMemoryEntry[]>([])
   const [personas, setPersonas] = React.useState<Persona[]>([])
   const [assets,   setAssets]   = React.useState<number>(0)
-  const [profile,  setProfile]  = React.useState<BrandMemoryEntry[]>([])
+  const [profileFieldCount, setProfileFieldCount] = React.useState<number>(0)
   const [loading,  setLoading]  = React.useState(true)
 
   React.useEffect(() => {
     Promise.allSettled([
-      fetch('/api/memory?limit=200').then(r => r.json()),
+      fetch('/api/memory').then(r => r.json()),
       fetch('/api/persona').then(r => r.json()),
       fetch('/api/assets?limit=1').then(r => r.json()),
     ]).then(([memRes, perRes, astRes]) => {
       if (memRes.status === 'fulfilled') {
-        const all: BrandMemoryEntry[] = memRes.value.entries ?? memRes.value.data ?? []
-        setSignals(all.filter(e => e.status === 'approved'))
-        // Use entries that have a topic as a proxy for profile/identity content
-        setProfile(all.filter(e => e.topic != null))
+        const memory = memRes.value?.memory ?? {}
+        const filled = ['preferred_tone', 'audience', 'industry', 'positioning', 'keywords']
+          .filter(key => memory[key] != null && memory[key] !== '')
+        setProfileFieldCount(filled.length)
       }
       if (perRes.status === 'fulfilled') setPersonas(perRes.value.personas ?? perRes.value.data ?? [])
       if (astRes.status === 'fulfilled') setAssets(astRes.value.total ?? 0)
@@ -1092,16 +664,6 @@ function LearningQueueTab() {
       icon: Mic2,
     })
 
-    if (signals.length < 3) queue.push({
-      id: 'signals',
-      priority: 'high',
-      title: 'Approve more brand signals',
-      description: `You have ${signals.length} approved signal${signals.length !== 1 ? 's' : ''}. BrandOS needs at least 3 to detect consistent brand patterns. Generate content and approve the signals it surfaces.`,
-      action: 'Review signals →',
-      href: '/workspace/brand?tab=signals',
-      icon: Sparkles,
-    })
-
     if (assets === 0) queue.push({
       id: 'assets',
       priority: 'high',
@@ -1112,7 +674,7 @@ function LearningQueueTab() {
       icon: BookOpen,
     })
 
-    if (profile.length < 3) queue.push({
+    if (profileFieldCount < 3) queue.push({
       id: 'profile',
       priority: 'medium',
       title: 'Complete your brand identity',
@@ -1120,16 +682,6 @@ function LearningQueueTab() {
       action: 'Edit identity →',
       href: '/workspace/brand?tab=profile',
       icon: Target,
-    })
-
-    if (signals.length >= 3 && signals.length < 10) queue.push({
-      id: 'signals-depth',
-      priority: 'medium',
-      title: 'Build signal depth',
-      description: `${signals.length} signals is a good start. 10+ signals means BrandOS has enough data to detect nuanced brand patterns and generate with high confidence.`,
-      action: 'Keep generating →',
-      href: '/workspace/create',
-      icon: BarChart2,
     })
 
     if (personas.length === 1) queue.push({
@@ -1143,7 +695,7 @@ function LearningQueueTab() {
     })
 
     return queue
-  }, [signals, personas, assets, profile])
+  }, [personas, assets, profileFieldCount])
 
   if (loading) return (
     <div className="flex items-center justify-center py-16 gap-3 text-gray-600">
@@ -1156,7 +708,7 @@ function LearningQueueTab() {
     <div className="text-center py-16">
       <Check className="w-12 h-12 mx-auto mb-3 text-emerald-500" />
       <p className="text-sm font-semibold text-gray-200 mb-1">Your brand profile is solid</p>
-      <p className="text-sm text-gray-500">Keep generating to continue building signal confidence over time.</p>
+      <p className="text-sm text-gray-500">Keep generating to help BrandOS refine its understanding of your brand over time.</p>
     </div>
   )
 

@@ -8,8 +8,10 @@
  *
  * PLATFORM SPLIT: this file previously mocked IBrandCognitionRuntime
  * (resolve / recordArtifactObservation, @brandos/contracts — deleted). It
- * now mocks CognitionProvider (resolveCognitionContext / observe / review /
- * summarizeCognition / checkHealth, @platform/cognition-contract).
+ * now mocks CognitionProvider (resolveCognitionContext / observe /
+ * summarizeCognition / checkHealth, @platform/cognition-contract). review()
+ * was removed from the BrandOS-local CognitionProvider contract as part of
+ * Option B — BrandOS no longer passes through raw-signal review decisions.
  *
  * Coverage goals:
  *   ✓ orchestrate() returns a GenerationResult with the correct contract shape
@@ -62,7 +64,6 @@ function makeMockCognitionClient(
   return {
     resolveCognitionContext: vi.fn(resolveImpl ?? (() => Promise.resolve(MOCK_COGNITION_CONTEXT))),
     observe: vi.fn(() => Promise.resolve()),
-    review: vi.fn(() => Promise.resolve()),
     summarizeCognition: vi.fn(() => Promise.resolve({
       preferredTone: null, audience: null, industry: null, positioning: null, keywords: null,
     })),

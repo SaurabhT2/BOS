@@ -17,7 +17,7 @@
  * KNOWN GAP: request.persona / request.brandContext are no longer forwarded
  * into cognition resolution — CognitionRequest accepts only
  * { workspaceId, taskType }. See
- * packages/cognition-contract/README.md, "Known contract gaps", item 2.
+ * packages/cognition-contract/README.md, "Known contract gaps", item 1.
  */
 
 import type {

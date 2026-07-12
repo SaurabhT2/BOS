@@ -218,20 +218,6 @@ export interface CognitionHealth {
   readonly degradedReason?: string
 }
 
-// ─── CognitionReviewDecision ─────────────────────────────────────────────
-
-/**
- * A human decision about previously surfaced cognitive material (e.g.
- * approving or rejecting a learned signal), passed through — not
- * evaluated — by BrandOS.
- */
-export interface CognitionReviewDecision {
-  readonly workspaceId: string
-  readonly entryId: string
-  readonly approved: boolean
-  readonly reviewedBy: string
-}
-
 // ─── Contract version ────────────────────────────────────────────────────
 
 /**

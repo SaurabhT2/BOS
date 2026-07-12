@@ -42,7 +42,6 @@
  * package boundary per the strategic doc's "own later phase" framing).
  */
 
-import { useAuth } from '@brandos/auth'
 import React, { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import {
@@ -60,7 +59,7 @@ import {
   Loader, Copy, LinkIcon, Mail,
   ThumbsUp, ThumbsDown, AlertTriangle, Shield,
   Download, ArrowDownToLine, CheckCircle2,
-  Presentation, BookOpen, Lock, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Repeat, X,
+  Presentation, BookOpen, Lock, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Repeat,
   HelpCircle,
 } from 'lucide-react'
 import { trackEvent, analyticsEvents, trackGenerationPerformance } from '@/lib/client-analytics'
@@ -126,7 +125,6 @@ function CreatePageLoadingFallback() {
 }
 
 function CreatePageInner() {
-  const { user } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -910,150 +908,6 @@ function CreatePageInner() {
     )
   }
 
-  // ── Signal review in Save step (P1.10) ────────────────────────────────────
-  // After generation, surface any pending brand signals so the user can
-  // approve/reject them at the moment of highest engagement — while they're
-  // still thinking about the content they just created.
-  // Uses existing /api/control-plane/brand-memory PATCH contract.
-  function SaveStepSignalReview() {
-    const [signals, setSignals] = React.useState<Array<{
-      id?: string; entry_id?: string; summary?: string; signal?: string;
-      description?: string; topic?: string; classification?: string;
-      confidence?: number; status?: string;
-    }>>([])
-    const [loadingSignals, setLoadingSignals] = React.useState(true)
-    const [actioned, setActioned] = React.useState<Set<string>>(new Set())
-    const [dismissed, setDismissed] = React.useState(false)
-
-    React.useEffect(() => {
-      // Small delay so the server has time to write brand_memory_entries
-      // (recordBrandMemoryObservation fires asynchronously after generation)
-      const timer = setTimeout(() => {
-        fetch('/api/control-plane/brand-memory')
-          .then(r => r.json())
-          .then(d => {
-            const all: typeof signals = Array.isArray(d) ? d : (d?.entries ?? [])
-            setSignals(all.filter(e => !e.status || e.status === 'pending_review'))
-          })
-          .catch(() => {})
-          .finally(() => setLoadingSignals(false))
-      }, 1500)
-      return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
-
-    const handleAction = async (entry: typeof signals[0], approved: boolean) => {
-      const id = entry.entry_id ?? entry.id
-      if (!id) return
-      setActioned(prev => new Set(prev).add(id))
-      try {
-        await fetch('/api/control-plane/brand-memory', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entry_id: id, approved, reviewed_by: user?.id ?? 'unknown' }),
-        })
-      } catch { /* non-fatal */ }
-    }
-
-    if (dismissed || (loadingSignals === false && signals.length === 0)) return null
-
-    const pending = signals.filter(s => {
-      const id = s.entry_id ?? s.id
-      return id ? !actioned.has(id) : true
-    })
-    const reviewedCount = actioned.size
-    const allActioned = reviewedCount > 0 && pending.length === 0
-
-    return (
-      <div className="rounded-xl border border-cyan-900/50 bg-cyan-950/20 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-            <span className="text-sm font-medium text-cyan-200">
-              {allActioned
-                ? `${reviewedCount} signal${reviewedCount === 1 ? '' : 's'} reviewed — thanks!`
-                : loadingSignals
-                ? 'Checking what BrandOS learned…'
-                : `BrandOS picked up ${signals.length} signal${signals.length === 1 ? '' : 's'} from this`
-              }
-            </span>
-          </div>
-          <button
-            onClick={() => setDismissed(true)}
-            className="text-gray-600 hover:text-gray-400 transition-colors shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {loadingSignals && (
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Loader className="w-3.5 h-3.5 animate-spin" />
-            <span>Looking for new brand signals…</span>
-          </div>
-        )}
-
-        {!loadingSignals && !allActioned && pending.length > 0 && (
-          <>
-            <p className="text-xs text-cyan-300/70">
-              Approve what fits your brand. These will shape every future generation.
-            </p>
-            <div className="space-y-2">
-              {pending.slice(0, 3).map((entry, i) => {
-                const id = entry.entry_id ?? entry.id ?? String(i)
-                return (
-                  <div key={id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-black/30">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-200 truncate">
-                        {entry.summary ?? entry.signal ?? entry.description ?? entry.topic ?? 'New brand signal'}
-                      </p>
-                      {entry.classification && (
-                        <span className="text-[10px] text-gray-500">
-                          {entry.classification === 'A' ? 'Strong pattern' : entry.classification === 'B' ? 'Emerging pattern' : 'Early observation'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => void handleAction(entry, true)}
-                        className="p-1.5 rounded bg-gray-800 hover:bg-emerald-900/50 hover:text-emerald-400 text-gray-400 transition-colors"
-                        title="Keep this signal"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => void handleAction(entry, false)}
-                        className="p-1.5 rounded bg-gray-800 hover:bg-red-900/50 hover:text-red-400 text-gray-400 transition-colors"
-                        title="Discard this signal"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            {signals.length > 3 && (
-              <button
-                onClick={() => router.push('/workspace/brand?tab=signals')}
-                className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
-              >
-                <Sparkles className="w-3 h-3" />
-                Review all {signals.length} signals in Intelligence
-              </button>
-            )}
-          </>
-        )}
-
-        {!loadingSignals && allActioned && (
-          <p className="text-xs text-cyan-300/70">
-            Your approved signals are now part of your brand profile — they&rsquo;ll influence future generations.
-          </p>
-        )}
-      </div>
-    )
-  }
-
   // ── Shared feedback row (unchanged) ───────────────────────────────────────
   function FeedbackRow() {
     if (!savedCampaignId) return null
@@ -1690,9 +1544,6 @@ function CreatePageInner() {
                     Find it anytime in <button onClick={() => router.push('/workspace/library')} className="text-cyan-400 hover:text-cyan-300 underline">Library</button>.
                   </p>
                 )}
-
-                {/* Signal review prompt — inline in Save step per P1 audit requirement */}
-                {hasResult && <SaveStepSignalReview />}
 
                 <FeedbackRow />
 

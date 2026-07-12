@@ -22,28 +22,30 @@ resolve) and delete one of the two copies in favor of a real dependency.
 Until then, a CI check comparing the two copies' file hashes is recommended
 so drift is caught immediately rather than discovered at integration time.
 
+## Resolved: raw-signal review UI (Option B)
+
+BrandOS's `/workspace/brand` page previously listed individual pending
+memory signals (id, classification, confidence, content) for human
+approve/reject, backed by `CognitionProvider.review()`. That surface has
+been removed from BrandOS along with `review()` and
+`CognitionReviewDecision` from this contract: `CognitionProvider` never had
+a read operation that could populate such a list (per
+`COGNITION_CONTRACT_SPEC.md` §4's exclusion of raw/unconsolidated signals
+from anything BrandOS can see), and raw-signal review is now understood to
+be entirely IntelligenceOS's responsibility rather than a BrandOS product
+surface. BrandOS consumes only synthesized cognition through
+`resolveCognitionContext` / `observe` / `summarizeCognition` / `checkHealth`.
+
 ## Known contract gaps (require an explicit decision — not resolved here)
 
-These were discovered while migrating BrandOS's existing brand-intelligence
-package onto this contract. Neither is a blocking technical constraint —
-both are product-surface conflicts between existing BrandOS behavior and
-the architecture documents' exclusion rules. Flagging per the
+This was discovered while migrating BrandOS's existing brand-intelligence
+package onto this contract. It is not a blocking technical constraint — it
+is a product-surface conflict between existing BrandOS behavior and the
+architecture documents' exclusion rules. Flagging per the
 "stop and explain, don't invent" instruction rather than deciding
 unilaterally:
 
-1. **Raw-signal review UI.** BrandOS's `/workspace/brand` page lists
-   individual pending memory signals (id, classification, confidence,
-   content) for human approve/reject. `CognitionProvider` has no read
-   operation that returns a list of raw or reviewable signals — by design,
-   per `COGNITION_CONTRACT_SPEC.md` §4's exclusion of raw/unconsolidated
-   signals from anything BrandOS can see. `review()` can still *act* on an
-   entry by its opaque id, but nothing in the current contract can populate
-   the list this page renders. Needs an explicit decision: extend the
-   contract with a narrowly scoped, already-summarized "reviewable items"
-   read (still no raw content, e.g. classification + confidence + a
-   pre-rendered display string), or change the product surface.
-
-2. **Explicit brand-voice configuration ingestion.** Before this
+1. **Explicit brand-voice configuration ingestion.** Before this
    migration, BrandOS forwarded a workspace's user-edited persona record
    (brand name, tone override, banned phrases, etc. — from
    `@brandos/auth`'s persona storage) into brand-cognition resolution on
@@ -55,12 +57,12 @@ unilaterally:
    synchronous read path. That leaves open how a workspace's explicit,
    user-set brand-voice configuration reaches IntelligenceOS at all.
    `observe()` doesn't fit (it reports generation outcomes, not settings).
-   Needs an explicit decision: an ingestion path outside the five
+   Needs an explicit decision: an ingestion path outside the four
    `CognitionProvider` operations (e.g. a one-time/on-change sync call),
    or treating persona configuration as a `CognitionContext.voice` override
    that IntelligenceOS itself is told about through some other channel.
 
-Until either is resolved, the BrandOS-side migration in this change set
-preserves the mechanical contract exactly as specified and leaves both gaps
-visible rather than papering over them with a shadow parameter or an
-undocumented sixth method.
+Until this is resolved, the BrandOS-side migration in this change set
+preserves the mechanical contract exactly as specified and leaves the gap
+visible rather than papering over it with a shadow parameter or an
+undocumented fifth method.

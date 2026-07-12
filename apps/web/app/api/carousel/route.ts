@@ -155,6 +155,18 @@ export async function POST(req: NextRequest) {
         )
 
         // P3-RECOVERY: return degraded artifact if available
+        //
+        // RESPONSE-CONTRACT-001 (P0 fix): this response MUST use the same
+        // envelope shape as the success response below (`success`, `result`,
+        // `campaignId`, `runtimeMode`) — the frontend (generateCarousel() in
+        // workspace/create/page.tsx) only ever reads `body.result` and does
+        // not know about a separate `artifact` key. Previously this branch
+        // returned `{ artifact: ... }` with HTTP 200, which the frontend
+        // silently failed to parse (body.result was undefined, so the
+        // "missing a valid artifact.slides array" guard fired and the UI
+        // never updated) — see the runtime investigation, Issue D. The
+        // recoverable_issues/recoverable_reason fields are additive so a
+        // future UI can still show a degraded-quality banner if it chooses to.
         if (err.isDegradedRecoverable && err.lastValidArtifact) {
           try {
             trackServer(user.id, 'artifact_degraded_recovery', {
@@ -167,7 +179,10 @@ export async function POST(req: NextRequest) {
           } catch { /* non-critical */ }
 
           return NextResponse.json({
-            artifact:           err.lastValidArtifact,
+            success:            true,
+            result:             err.lastValidArtifact,
+            campaignId:         null,
+            runtimeMode,
             repaired:           err.repairAttempts > 0,
             repairAttempts:     err.repairAttempts,
             recoverable_issues: true,

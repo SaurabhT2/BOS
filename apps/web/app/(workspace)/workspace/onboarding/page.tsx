@@ -10,7 +10,6 @@
  *   Step 4 — Create your first voice (persona creation)
  *   Step 5 — Upload brand assets (optional but recommended)
  *   Step 6 — Generate your first piece
- *   Step 7 — Review what was learned
  *
  * Implementation notes:
  *   - Steps 3 and 4 use existing /api/memory and /api/persona contracts —
@@ -18,8 +17,10 @@
  *     workspace creation; this is an educational moment, not a billing gate).
  *   - Step 5 links to Library — asset upload already exists there.
  *   - Step 6 redirects to Create with a pre-filled topic.
- *   - Step 7 is surfaced inline on the Home page after first generation,
- *     not a separate onboarding step — see Home page signal digest.
+ *   - There is no separate "review what was learned" step: BrandOS no
+ *     longer exposes raw learning signals for review anywhere in its UI
+ *     (Option B — cognition-consumer split). Learning happens automatically
+ *     via CognitionProvider.observe(); IntelligenceOS owns any review of it.
  *   - finishOnboarding()/skipToWorkspace() both call the imported
  *     completeOnboarding(userId) (@brandos/auth), which sets the durable
  *     public.users.onboarding_completed_at timestamp — the single
@@ -282,8 +283,8 @@ export default function OnboardingPage() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10 text-left">
               {[
-                { icon: Brain, title: 'Learns your voice', body: 'Every generation teaches BrandOS your tone, vocabulary, and style. Approve what fits, reject what doesn\u2019t.' },
-                { icon: Sparkles, title: 'Gets smarter over time', body: 'The more you create and review, the more accurately BrandOS captures your brand\u2019s DNA.' },
+                { icon: Brain, title: 'Learns your voice', body: 'Every generation teaches BrandOS your tone, vocabulary, and style.' },
+                { icon: Sparkles, title: 'Gets smarter over time', body: 'The more you create, the more accurately BrandOS captures your brand\u2019s DNA.' },
                 { icon: Wand2, title: 'Produces on-brand content', body: 'Your accumulated brand intelligence shapes every generation — consistently, at scale.' },
               ].map(({ icon: Icon, title, body }) => (
                 <div key={title} className="p-4 rounded-xl bg-gray-900 border border-gray-800">
@@ -595,8 +596,8 @@ export default function OnboardingPage() {
               set up — and pick up new signals from this generation.
             </p>
             <p className="text-sm text-gray-500 mb-10 max-w-sm mx-auto">
-              After you generate, you&rsquo;ll see the brand signals BrandOS learned from that piece —
-              and you can approve or reject them to shape future generations.
+              After you generate, BrandOS keeps learning from what you create — shaping future
+              generations automatically as your brand profile grows.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button

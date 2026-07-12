@@ -18,7 +18,6 @@ import { HttpCognitionProvider } from '../HttpCognitionProvider'
 import type {
   CognitionContext,
   ObservationInput,
-  CognitionReviewDecision,
 } from '@platform/cognition-contract'
 
 const BASE_URL = 'https://cognition.internal'
@@ -125,32 +124,6 @@ describe('HttpCognitionProvider', () => {
       await expect(
         provider.observe({ workspaceId: 'ws-1', requestId: 'req-2', outputText: 'x', score: 0.5 })
       ).resolves.toBeUndefined()
-    })
-  })
-
-  describe('review', () => {
-    it('POSTs to /v1/cognition/review and lets errors propagate (human-triggered UI action)', async () => {
-      fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
-
-      const decision: CognitionReviewDecision = {
-        workspaceId: 'ws-1',
-        entryId: 'entry-1',
-        approved: true,
-        reviewedBy: 'user-1',
-      }
-      await provider.review(decision)
-
-      const [url, init] = fetchMock.mock.calls[0]
-      expect(url).toBe(`${BASE_URL}/v1/cognition/review`)
-      expect(JSON.parse(init.body)).toEqual(decision)
-    })
-
-    it('propagates errors rather than swallowing them', async () => {
-      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'not found' }), { status: 404 }))
-
-      await expect(
-        provider.review({ workspaceId: 'ws-1', entryId: 'missing', approved: false, reviewedBy: 'user-1' })
-      ).rejects.toThrow(/404/)
     })
   })
 

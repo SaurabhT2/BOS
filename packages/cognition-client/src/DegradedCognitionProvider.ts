@@ -28,7 +28,6 @@ import type {
   CognitionHealth,
   CognitionProvider,
   CognitionRequest,
-  CognitionReviewDecision,
   CognitionSummary,
   ObservationInput,
 } from '@platform/cognition-contract'
@@ -53,18 +52,6 @@ export class DegradedCognitionProvider implements CognitionProvider {
     logger.warn('[DegradedCognitionProvider] observe() dropped — IntelligenceOS not configured', {
       workspaceId: input.workspaceId,
       requestId: input.requestId,
-    })
-  }
-
-  async review(decision: CognitionReviewDecision): Promise<void> {
-    // Human-driven, out-of-band action (e.g. an admin approving a learned
-    // signal) — not in the generation hot path. Dropped rather than thrown
-    // for the same reason observe() is: there is no IntelligenceOS to
-    // review anything, in an environment that was never configured to
-    // have one.
-    logger.warn('[DegradedCognitionProvider] review() dropped — IntelligenceOS not configured', {
-      workspaceId: decision.workspaceId,
-      entryId: decision.entryId,
     })
   }
 

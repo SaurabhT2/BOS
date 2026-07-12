@@ -21,7 +21,7 @@ All four direct BI import sites replaced with CPL proxy functions:
 
 | File | Was | Now |
 |---|---|---|
-| `app/api/control-plane/brand-memory/route.ts` | `getGlobalBrandIntelligenceRuntime()` × 3 | `getBrandMemory`, `recordBrandMemoryObservation`, `reviewBrandMemorySignal` from CPL |
+| `app/api/control-plane/brand-memory/route.ts` | `getGlobalBrandIntelligenceRuntime()` × 3 | `recordBrandMemoryObservation` from CPL (Option B: `getBrandMemory`/`reviewBrandMemorySignal` since removed — BrandOS no longer reads or reviews raw signals) |
 | `app/api/memory/route.ts` | `getGlobalBrandIntelligenceRuntime().getBrandSummary()` | `getBrandSummary` from CPL |
 | `lib/agents/plannerAgent.ts` | `getGlobalBrandIntelligenceRuntime().resolve()` | `resolveBrandCognitionContext` from CPL |
 | `lib/agents/transformAgent.ts` | `getGlobalBrandIntelligenceRuntime().resolve()` | `resolveBrandCognitionContext` from CPL |
@@ -154,7 +154,7 @@ app/
       route.ts                             ← → runControlPlane()
       artifact/route.ts                    ← → executeArtifactPipeline()
     control-plane/
-      brand-memory/route.ts                ← → getBrandMemory, recordBrandMemoryObservation, reviewBrandMemorySignal
+      brand-memory/route.ts                ← → recordBrandMemoryObservation (Option B: observe()-only)
     memory/route.ts                        ← → getBrandSummary() from CPL
     persona/route.ts                       ← → @brandos/auth (setDefaultPersona, deletePersona, updatePersona)
     admin/

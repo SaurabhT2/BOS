@@ -18,7 +18,6 @@ export type {
   ObservationInput,
   CognitionSummary,
   CognitionHealth,
-  CognitionReviewDecision,
 } from './CognitionContext'
 
 export { COGNITION_CONTRACT_VERSION } from './CognitionContext'

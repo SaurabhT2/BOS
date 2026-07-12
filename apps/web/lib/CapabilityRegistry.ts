@@ -93,7 +93,7 @@ const ENTRIES: CapabilityEntry[] = [
 
   // ── Observability ─────────────────────────────────────────────────────────────
   // observability.routing REMOVED — route deleted (Sprint A). Was unauthenticated in-memory store with no pipeline connection.
-  { key: 'observability.brand-memory',   owner: 'app/api/control-plane/brand-memory/route.ts',  description: 'Brand signal store read/write',         status: 'active', pipelineEntry: 'observability', issues: ['ISSUE-2-RESOLVED'] },
+  { key: 'observability.brand-memory',   owner: 'app/api/control-plane/brand-memory/route.ts',  description: 'Generation observation reporting (CognitionProvider.observe() proxy) — write-only, no raw signal read',         status: 'active', pipelineEntry: 'observability', issues: ['ISSUE-2-RESOLVED'] },
   { key: 'observability.experiments',    owner: 'app/api/control-plane/experiments/route.ts',   description: 'A/B experiment config',                 status: 'active', pipelineEntry: 'observability', issues: ['ISSUE-2-RESOLVED'] },
   { key: 'observability.prompt-library', owner: 'app/api/control-plane/prompt-library/route.ts', description: 'Prompt template CRUD',                status: 'active', pipelineEntry: 'observability', issues: ['ISSUE-2-RESOLVED'] },
   { key: 'observability.score-history',  owner: 'app/api/control-plane/score-history/route.ts', description: 'Governance score history',              status: 'active', pipelineEntry: 'observability', issues: ['ISSUE-2-RESOLVED'] },

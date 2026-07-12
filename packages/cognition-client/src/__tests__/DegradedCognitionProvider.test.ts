@@ -40,12 +40,6 @@ describe('DegradedCognitionProvider', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('review() resolves without throwing (dropped, not propagated)', async () => {
-    await expect(
-      provider.review({ workspaceId: 'ws-1', entryId: 'entry-1', approved: true })
-    ).resolves.toBeUndefined()
-  })
-
   it('summarizeCognition() returns an all-null summary rather than throwing', async () => {
     const summary = await provider.summarizeCognition('ws-1')
     expect(summary).toEqual({

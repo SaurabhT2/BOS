@@ -229,10 +229,24 @@ export interface ArtifactPipelineResult<TArtifact extends ArtifactV2 = ArtifactV
 
 export class ArtifactPipelineRejection extends Error {
   /**
-   * P3-RECOVERY: When lastValidArtifact is set, the pipeline caught an
-   * ArtifactEngineRejection that carried a partial artifact. Callers (route
-   * handlers) should render this artifact with a degraded=true flag rather than
-   * returning a hard failure. The artifact is NOT governance-approved.
+   * P3-RECOVERY: When lastValidArtifact is set, callers (route handlers)
+   * should render this artifact with a degraded/recoverable flag rather than
+   * returning a hard failure.
+   *
+   * Docs corrected (runtime investigation, Issue E — was previously stale):
+   * lastValidArtifact's governance status depends on which rejection path
+   * populated it. From the carousel richness-retry loop (the only current
+   * source of a "budget exhausted" or "regeneration failed" rejection),
+   * lastValidArtifact IS governance-approved — see RICHNESS-RETRY-002 above:
+   * it is specifically the highest-scoring attempt that passed
+   * govResult.passed and only fell short of the separate richness-score
+   * floor. It is not a partially-governed or ungoverned artifact. A
+   * lastValidArtifact populated from an ArtifactEngineRejection thrown by
+   * the OCL/governance repair loop itself (the outer catch blocks below)
+   * may carry different guarantees — callers should not assume
+   * "recoverable" implies "identical governance status" across all rejection
+   * sources, but for the carousel richness path specifically, the artifact
+   * is real, governance-valid content, not a fallback stub.
    */
   constructor(
     public readonly reason: string,
@@ -650,6 +664,25 @@ async function runCarouselPipeline(
   // Re-generating with explicit richness context recovers most of these cases.
   const MAX_RICHNESS_RETRIES = 2
 
+  // RICHNESS-RETRY-002 (P1 fix): track the highest-scoring governance-valid
+  // artifact seen across the whole retry sequence, not just the most recent
+  // attempt. The retry loop's own scores are non-monotonic (a regeneration
+  // aimed at fixing richness can score worse than an earlier attempt — see
+  // the runtime investigation's observed 72 → 77 → 67 sequence), so "last"
+  // and "best" are genuinely different artifacts. `bestRef` is threaded
+  // through the recursive `attempt()` calls via closure, the same pattern
+  // already used for `historyRef` below. Only governance-passed attempts are
+  // ever recorded here — an attempt that failed governance outright is never
+  // a valid recovery candidate, matching the existing `govResult.passed`
+  // gate on every throw site in this function.
+  const bestRef: {
+    current: {
+      artifact:      CarouselArtifact
+      richnessScore: number
+      govResult:     IGovernanceResult<CarouselArtifact>
+    } | null
+  } = { current: null }
+
   async function attempt(
     attemptInput: ArtifactPipelineInput,
     richnessAttempt: number,
@@ -677,6 +710,16 @@ async function runCarouselPipeline(
       const finalArtifact = engineResult.artifact as CarouselArtifact
       const govResult = engineResult.governanceResult as IGovernanceResult<CarouselArtifact>
       const richnessScore = finalArtifact.richness_metrics.overall_score
+
+      // RICHNESS-RETRY-002: record this attempt as the new best candidate if
+      // it passed governance and scores higher than whatever we've kept so
+      // far. Deliberately evaluated before the meetsThreshold branch below,
+      // so an attempt that passes governance but still misses the richness
+      // floor (e.g. 77/80) is still eligible to be the eventual recovery
+      // artifact if no later attempt beats it.
+      if (govResult.passed && (bestRef.current === null || richnessScore > bestRef.current.richnessScore)) {
+        bestRef.current = { artifact: finalArtifact, richnessScore, govResult }
+      }
 
       const policy = AdminSettingsService.getGovernancePolicy()
       const configuredThreshold = (policy.scoreThresholds as Record<string, number>)?.['carousel'] ?? 65
@@ -768,18 +811,27 @@ async function runCarouselPipeline(
             // throwing away a perfectly usable artifact instead of returning it.
             // Wrap the failure the same way exhausted-retries already are (below)
             // so the route's existing recovery path can serve this artifact instead.
+            //
+            // RICHNESS-RETRY-002: recover with `bestRef.current` (the highest-scoring
+            // governance-passed attempt across the whole retry sequence so far), not
+            // `finalArtifact` (this attempt only). They can differ — this attempt is
+            // only in this branch because ITS regeneration failed; an earlier attempt
+            // may already have scored higher. `bestRef.current` is guaranteed non-null
+            // here because this attempt itself passed governance and was already
+            // recorded into it above.
+            const recovery = bestRef.current!
             console.warn(
               `[ArtifactPipeline][${rid}] Richness retry regeneration failed (attempt ${richnessAttempt + 1}/${MAX_RICHNESS_RETRIES + 1}): ` +
               `${regenErr instanceof Error ? regenErr.message : String(regenErr)} — ` +
-              `falling back to last passing artifact (richness=${richnessScore})`
+              `falling back to best passing artifact across attempts (richness=${recovery.richnessScore})`
             )
             throw new ArtifactPipelineRejection(
               `Richness retry regeneration failed: ${regenErr instanceof Error ? regenErr.message : String(regenErr)} ` +
-              `(last richness score ${richnessScore}/${effectiveThreshold}, governance passed)`,
-              govResult.attempts,
+              `(best richness score across attempts ${recovery.richnessScore}/${effectiveThreshold}, governance passed)`,
+              recovery.govResult.attempts,
               'carousel',
               rid,
-              finalArtifact, // lastValidArtifact — governance-valid, richness below floor, but real
+              recovery.artifact, // lastValidArtifact — highest-scoring governance-valid attempt, not just the last one
             )
           }
 
@@ -795,20 +847,32 @@ async function runCarouselPipeline(
         }
 
         // Budget exhausted — hard reject
+        // RICHNESS-RETRY-002: recover with the best-scoring governance-passed
+        // attempt seen across the whole retry sequence (`bestRef.current`),
+        // not this (the final) attempt. The three attempts in this loop are
+        // not monotonically improving — a later regeneration can score worse
+        // than an earlier one — so "final attempt" and "best attempt" are not
+        // interchangeable. `bestRef.current` is guaranteed non-null here
+        // because this attempt itself passed governance and was already
+        // recorded into it above.
+        const recovery = bestRef.current!
         console.warn(
           `[ArtifactPipeline][${rid}] Richness threshold NOT MET after ${richnessAttempt + 1} attempts: ` +
-          `score=${richnessScore} effectiveThreshold=${effectiveThreshold} ` +
+          `finalScore=${richnessScore} bestScore=${recovery.richnessScore} effectiveThreshold=${effectiveThreshold} ` +
           `configuredThreshold=${configuredThreshold} mode=${attemptInput.runtimeMode} taskType=carousel`
         )
-        // P3-RECOVERY: finalArtifact exists and PASSED governance — it only failed
-        // the richness floor check. This is the best possible recoverable artifact.
+        // P3-RECOVERY: the best-scoring attempt across the retry sequence
+        // PASSED governance — it only failed the richness floor check. This
+        // is genuinely the best possible recoverable artifact, not merely
+        // the most recent one.
         throw new ArtifactPipelineRejection(
-          `Richness score ${richnessScore} below effective threshold ${effectiveThreshold} ` +
+          `Richness score ${recovery.richnessScore} (best of ${richnessAttempt + 1} attempts; ` +
+          `final attempt scored ${richnessScore}) below effective threshold ${effectiveThreshold} ` +
           `(configured=${configuredThreshold}, mode=${attemptInput.runtimeMode}) after ${richnessAttempt + 1} attempts`,
-          govResult.attempts,
+          recovery.govResult.attempts,
           'carousel',
           rid,
-          finalArtifact, // lastValidArtifact — governance-valid, richness below floor
+          recovery.artifact, // lastValidArtifact — highest-scoring governance-valid attempt across the retry sequence
         )
       }
 

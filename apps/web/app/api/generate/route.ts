@@ -221,8 +221,19 @@ export async function POST(req: NextRequest) {
               })
             } catch { /* non-critical */ }
 
+            // RESPONSE-CONTRACT-001 (P0 fix): use the same envelope shape as
+            // the success response below (`success`, `result`, `campaignId`,
+            // `runtimeMode`) — the frontend's handleFallback() only reads
+            // `data.result`. Previously this branch returned `{ artifact: ... }`
+            // with HTTP 200, which `data.result` never matched, so the caller
+            // fell back to treating the whole envelope as the artifact — see
+            // the runtime investigation, Issue D. recoverable_issues /
+            // recoverable_reason remain available for a future UI banner.
             return NextResponse.json({
-              artifact:           err.lastValidArtifact,
+              success:            true,
+              result:             err.lastValidArtifact,
+              campaignId:         null,
+              runtimeMode,
               repaired:           err.repairAttempts > 0,
               repairAttempts:     err.repairAttempts,
               // P3-RECOVERY: UI reads this flag to display the warning banner.
