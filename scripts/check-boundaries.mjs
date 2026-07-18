@@ -187,6 +187,16 @@ const CPL_COGNITION_ALLOWED_SYMBOLS = new Set([
   'createDegradedCognitionContext',
   'getGlobalKnowledgeIngestClient',
   'initKnowledgeIngestClient',
+  // EM-1.2 (Cognitive Platform Evolution Program) — same reasoning as the
+  // KnowledgeIngestClient entries above.
+  'getGlobalWorkspaceConfigurationClient',
+  'initWorkspaceConfigurationClient',
+  // EM-3.1 / EM-3.3 (Cognitive Platform Evolution Program) — same
+  // reasoning again.
+  'getGlobalFeedbackEventClient',
+  'initFeedbackEventClient',
+  'getGlobalCorrectionClient',
+  'initCorrectionClient',
   // Type-only symbols re-exported from @platform/cognition-contract for
   // convenience (see cognition-client/src/index.ts) — allowed because they
   // carry no runtime coupling, only shape information.
@@ -195,6 +205,9 @@ const CPL_COGNITION_ALLOWED_SYMBOLS = new Set([
   'CognitionRequest', 'ObservationInput', 'CognitionSummary', 'CognitionHealth',
   'CognitionReviewDecision', 'CognitionProvider',
   'KnowledgeAssetIngestInput', 'HttpCognitionProviderConfig', 'KnowledgeIngestClientConfig',
+  // EM-3.1 / EM-3.3 wire-shape type-only symbols — same "carries no
+  // runtime coupling" reasoning as the block above.
+  'FeedbackEventInput', 'CorrectionInput',
 ]);
 
 function checkCplBiRule(packagesRoot) {

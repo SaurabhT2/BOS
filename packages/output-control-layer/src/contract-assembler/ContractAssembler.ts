@@ -25,6 +25,7 @@ import type {
   IArtifactContribution,
   IRuntimeContribution,
   ISkillContribution,
+  IKnowledgeContribution,
 } from '@brandos/contracts';
 import { CAROUSEL_STRUCTURAL_CONSTRAINTS } from '@brandos/contracts';
 
@@ -75,6 +76,7 @@ export class ContractAssembler implements IContractAssembler {
       'artifact',
       'runtime',
       'skill',
+      'knowledge',
     ];
 
     const results = await Promise.all(
@@ -111,6 +113,14 @@ export class ContractAssembler implements IContractAssembler {
     // skill is truly optional — only attach if contributor produced a value
     const skill = raw.skill as ISkillContribution | null;
     if (skill) contract.skill = skill;
+
+    // EM-4.1 (Cognitive Platform Evolution Program) — same truly-optional
+    // pattern as skill above. No fallback object: absence means
+    // IntelligenceOS has nothing synthesized yet for this workspace, which
+    // must render as "no section" in the compiled prompt, not an empty
+    // placeholder section.
+    const knowledge = raw.knowledge as IKnowledgeContribution | null;
+    if (knowledge) contract.knowledge = knowledge;
 
     // PLATFORM SPLIT: styleProjection promotion removed. Raw IStyleProjection
     // never crosses the BrandOS boundary anymore — see

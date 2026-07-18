@@ -1000,6 +1000,35 @@ export async function updateAssetVlmResult(
 }
 
 /**
+ * Cognitive Platform Evolution Program, EM-2.6 (Ingestion Correlation &
+ * Confirmation). Records the IntelligenceOS knowledge-asset id returned by
+ * a successful `POST /v1/knowledge/ingest` call. Deliberately NOT folded
+ * into `AssetUpdateFields`/`updateAsset()` — that type is scoped to
+ * "fields a user may update via PATCH /api/assets/:id" (see IAuth.ts), and
+ * this is a system-internal correlation write, not a user edit. Mirrors
+ * updateAssetStatus()'s shape. Scoped to workspaceId, same as every other
+ * asset write in this file.
+ */
+export async function recordAssetIntelligenceSync(
+  assetId: string,
+  workspaceId: string,
+  intelligenceAssetId: string
+): Promise<DbResult<BrandAssetRow>> {
+  // Uses admin client — see createAsset() comment.
+  const { data, error } = await getSupabaseAdmin()
+    .from(T.brand_assets)
+    .update({ intelligence_asset_id: intelligenceAssetId, updated_at: new Date().toISOString() })
+    .eq('id', assetId)
+    .eq('workspace_id', workspaceId)  // CRITICAL: workspace isolation
+    .select()
+    .single();
+
+  if (error?.code === 'PGRST116') return { data: null, error: 'Asset not found' };
+  if (error) return { data: null, error: error.message };
+  return { data: data as BrandAssetRow, error: null };
+}
+
+/**
  * Return total storage bytes consumed by all non-archived assets in a workspace.
  * Pre-wired for P2 storage quota enforcement.
  * Returns 0 for workspaces with no assets (not an error).

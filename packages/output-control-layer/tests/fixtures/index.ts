@@ -122,7 +122,7 @@ export const CONTRIBUTOR_CONTEXT_WITH_BRAND: ContributorContext = {
   // never read by either contributor — see IdentityContributor.ts and
   // AGENT_CONTEXT.md in packages/cognition-client for the history.
   cognitionContext: {
-    contractVersion: '1.0.0',
+    contractVersion: '1.1.0',
     workspaceId: 'test-workspace-001',
     resolvedAt: '2026-05-28T00:00:00.000Z',
     confidence: 'high',
@@ -145,6 +145,28 @@ export const CONTRIBUTOR_CONTEXT_WITH_BRAND: ContributorContext = {
     },
     visualIdentity: null,
     provenance: { signalCount: 40, lastConsolidatedAt: '2026-05-27T00:00:00.000Z' },
+    // EM-1.1 (Cognitive Platform Evolution Program) — these three fields
+    // became required (nullable, not optional) when this fixture's
+    // CognitionContext type gained ADR-004's sections. Populated with
+    // realistic sample data here (rather than all-null) so
+    // CONTRIBUTOR_CONTEXT_WITH_BRAND is also useful fixture data for
+    // KnowledgeContributor.ts's tests (EM-4.1) — see
+    // tests/contracts/contributors.test.ts.
+    knowledge: {
+      themes: [{ name: 'founder-led growth', description: 'content emphasizes the founder as the primary voice' }],
+      confidence: 'high',
+      hasConflict: false,
+    },
+    reasoning: {
+      conclusions: [{ statement: 'Audience responds better to specific numbers than vague claims' }],
+      confidence: 'medium',
+      hasConflict: false,
+    },
+    positioning: {
+      statements: [{ statement: 'Positioned as the founder-friendly alternative to enterprise tooling' }],
+      confidence: 'high',
+      hasConflict: false,
+    },
   },
 };
 

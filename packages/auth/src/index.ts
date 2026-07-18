@@ -86,6 +86,7 @@ export {
   archiveAsset,
   updateAssetStatus,
   updateAssetVlmResult,
+  recordAssetIntelligenceSync,
   getTotalAssetStorageForWorkspace,
   countMonthlyUploadsForWorkspace,
   // Provider Credentials — P3 (BYOK)

@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-07-09 09:59:52 UTC",
+    "generated": "2026-07-13 16:08:45 UTC",
     "generator": "scripts/generate-architecture-graph.mjs",
     "purpose": "Agent-readable architecture knowledge graph — ownership, dependencies, exports, table access, routes, restrictions and applicable rules per package, derived from existing authorities (no duplicated source of truth).",
     "authoritySources": [
@@ -38,12 +38,11 @@
         "ObservationInput",
         "CognitionSummary",
         "CognitionHealth",
-        "CognitionReviewDecision",
         "COGNITION_CONTRACT_VERSION",
         "CognitionProvider",
         "createDegradedCognitionContext"
       ],
-      "exportCount": 14,
+      "exportCount": 13,
       "tables": [],
       "readsTables": [],
       "writesTables": [],
@@ -498,11 +497,10 @@
         "ObservationInput",
         "CognitionSummary",
         "CognitionHealth",
-        "CognitionReviewDecision",
         "CognitionProvider",
         "createDegradedCognitionContext"
       ],
-      "exportCount": 26,
+      "exportCount": 25,
       "tables": [],
       "readsTables": [],
       "writesTables": [],
@@ -1519,9 +1517,7 @@
         "OverrideMode",
         "TaskType",
         "RuntimeMode",
-        "getBrandMemory",
         "recordBrandMemoryObservation",
-        "reviewBrandMemorySignal",
         "resolveBrandCognitionContext",
         "getBrandSummary",
         "ingestWorkspaceKnowledgeAsset",
@@ -1530,7 +1526,7 @@
         "bootstrapContractAssembler",
         "_resetContractAssemblerForTesting"
       ],
-      "exportCount": 113,
+      "exportCount": 111,
       "tables": [
         "brandos_admin_settings",
         "brandos_artifact_approvals",

@@ -35,6 +35,43 @@
 // Active:   Yes — currently flows as a flat identityFragment string.
 //           When this typed interface is wired, the flat string is eliminated.
 // ---------------------------------------------------------------------------
+/**
+ * Cognitive Platform Evolution Program, Milestone 4 (Identity Evolution),
+ * EM-4.1 (Knowledge/Reasoning/Positioning Contributors).
+ *
+ * Surfaces CognitionContext's ADR-004 (Cognitive Consolidation) sections —
+ * `knowledge`, `reasoning`, `positioning` — which BrandOS's contract copy
+ * gained in EM-1.1 but which nothing read until this contribution slot
+ * existed. IntelligenceOS was already synthesizing this content from both
+ * uploaded Knowledge and corroborated Experience; it reached this far and
+ * then went unused (see the audit's §1.2).
+ *
+ * Combines all three CognitionContext sections into one contribution
+ * (rather than three separate slots/contributors) — they share an
+ * identical shape (an item list + confidence + hasConflict) and a common
+ * origin (ADR-004's single consolidation pass), and the prompt compiler
+ * renders them as one section. A future need to treat them independently
+ * (different confidence gates, different prompt placement) would be a
+ * reason to split this back apart — not anticipated speculatively here.
+ */
+export interface IKnowledgeContribution {
+  /** From CognitionContext.knowledge — recurring themes across uploaded/learned material. */
+  themes?: { name: string; description: string }[]
+  /** From CognitionContext.reasoning — conclusions reached beyond direct recall. */
+  conclusions?: string[]
+  /** From CognitionContext.positioning — market/category standing statements. */
+  positioningStatements?: string[]
+  /**
+   * Diagnostic only, same convention as IIdentityContribution.confidence —
+   * never used for gating (IntelligenceOS's null-vs-populated decision on
+   * each section IS the gate). The lowest of the three sections' reported
+   * confidence, when more than one section is present.
+   */
+  confidence: number
+  /** True if any of the three sections reported hasConflict. Surfaced so a future prompt/UI treatment can hedge language accordingly — not acted on by the compiler itself yet. */
+  hasConflict?: boolean
+}
+
 export interface IIdentityContribution {
   /**
    * Preferred narrative hook approach learned from past successful content.
@@ -493,6 +530,16 @@ export interface ResolvedGenerationContract {
    * carousel-founder skill today).
    */
   skill?: ISkillContribution
+
+  /**
+   * Cognitive Platform Evolution Program, EM-4.1. Consolidated
+   * knowledge/reasoning/positioning content (ADR-004). Optional — absent
+   * when the workspace has no cognition history rich enough for
+   * IntelligenceOS to have synthesized any of the three sections yet
+   * (see IKnowledgeContribution's docblock); the prompt compiler must
+   * degrade gracefully to no section, not a placeholder.
+   */
+  knowledge?: IKnowledgeContribution
 
   /**
    * PLATFORM SPLIT: styleProjection removed. Raw IStyleProjection (Class A+B

@@ -1,0 +1,16 @@
+{
+  "_comment": "Every entry here is a KNOWN, DELIBERATE, REVIEWED divergence between this repository's copy of @platform/cognition-contract and IntelligenceOS's copy — not an oversight. Adding an entry here should always be accompanied by a docblock in the relevant .ts file explaining the same thing. See packages/cognition-contract/scripts/check-contract-parity.mjs.",
+
+  "decl:CognitionProvider": {
+    "reason": "Option B (cognition-consumer split): BrandOS's copy of CognitionProvider intentionally has 4 required operations, not IntelligenceOS's 5 — review() is out of scope for BrandOS's contract. This is a genuinely open architecture question (does BrandOS ever need a review surface at all?), not resolved by this program — see the Cognitive Platform Evolution Program, Milestone 4, EM-4.5.",
+    "trackingRef": "EM-4.5"
+  },
+  "decl:CognitionReviewDecision": {
+    "reason": "Companion type to CognitionProvider.review() — see that entry. Not present in BrandOS's contract copy pending EM-4.5's resolution.",
+    "trackingRef": "EM-4.5"
+  },
+  "export:CognitionReviewDecision": {
+    "reason": "Not exported from BrandOS's index.ts because the type does not exist in this copy — see decl:CognitionReviewDecision.",
+    "trackingRef": "EM-4.5"
+  }
+}

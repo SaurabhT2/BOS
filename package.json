@@ -29,9 +29,12 @@
     "brandos:feature": "tsx scripts/brandos-feature.ts",
     "brandos:bug": "tsx scripts/brandos-bug.ts",
     "brandos:plan": "tsx scripts/brandos-plan.ts",
-    "brandos:evolve": "tsx scripts/brandos-evolve.ts"
+    "brandos:evolve": "tsx scripts/brandos-evolve.ts",
+    "backfill:workspace-configuration": "tsx scripts/backfill-workspace-configuration.ts"
   },
   "devDependencies": {
+    "@brandos/auth": "workspace:*",
+    "@brandos/cognition-client": "workspace:*",
     "@types/node": "^20.0.0",
     "@types/uuid": "^9.0.0",
     "@types/ws": "^8.18.1",

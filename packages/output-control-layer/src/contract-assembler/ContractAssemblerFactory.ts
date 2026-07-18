@@ -28,6 +28,7 @@ import { IntentContributor }   from './contributors/IntentContributor';
 import { ArtifactContributor } from './contributors/ArtifactContributor';
 import { RuntimeContributor }  from './contributors/RuntimeContributor';
 import { SkillContributor }    from './contributors/SkillContributor';
+import { KnowledgeContributor } from './contributors/KnowledgeContributor';
 
 // ─── Options type (inline to stay within rootDir) ────────────────────────────
 
@@ -72,6 +73,11 @@ export class ContractAssemblerFactory {
       // flips — exactly mirroring pre-gate-lift behavior for every workspace
       // that hasn't enabled it.
       assembler.register('skill',    new SkillContributor());
+      // EM-4.1 (Cognitive Platform Evolution Program) — see
+      // KnowledgeContributor.ts. Always registered; the contributor
+      // itself returns null when the workspace has nothing synthesized
+      // yet, same pattern as identity/skill above.
+      assembler.register('knowledge', new KnowledgeContributor());
     }
 
     if (options.additionalContributors) {

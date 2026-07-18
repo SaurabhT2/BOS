@@ -56,6 +56,13 @@ const MOCK_COGNITION_CONTEXT: CognitionContext = {
     signalCount: 12,
     lastConsolidatedAt: '2026-05-27T00:00:00.000Z',
   },
+  // EM-1.1 (Cognitive Platform Evolution Program) — these three fields
+  // became required (nullable) when CognitionContext gained ADR-004's
+  // sections; null here is a legitimate value (this fixture's workspace
+  // has nothing synthesized for these sections), not a placeholder.
+  knowledge: null,
+  reasoning: null,
+  positioning: null,
 }
 
 function makeMockCognitionClient(
@@ -166,6 +173,40 @@ describe('CPLOrchestrator contract', () => {
         workspaceId: BASE_REQUEST.workspaceId,
       })
     )
+  })
+
+  // Completion Mission (RCA finding — missing topic propagation): observe()
+  // used to omit `topic` entirely, so IntelligenceOS's SignalExtractor could
+  // never emit its expertise_domains signal. This asserts the same topic
+  // ContractAssembler anchors the prompt to (userPrompt, truncated to 120
+  // chars) is now reported to observe() as well.
+  it('propagates a topic (derived from userPrompt) into observe()', async () => {
+    await orchestrator.orchestrate(BASE_REQUEST)
+    expect(mockClient.observe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: BASE_REQUEST.userPrompt.slice(0, 120),
+      })
+    )
+  })
+
+  it('propagates topic into the failure-path observe() call as well', async () => {
+    ;(orchestrator as any).runStructuredPipeline = vi.fn(async () => {
+      throw new Error('AI runtime unavailable')
+    })
+    await expect(orchestrator.orchestrate(BASE_REQUEST)).rejects.toThrow()
+    expect(mockClient.observe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: BASE_REQUEST.userPrompt.slice(0, 120),
+        outcome: 'failure',
+      })
+    )
+  })
+
+  it('omits topic when userPrompt is empty/whitespace-only', async () => {
+    const req: GenerationRequest = { ...BASE_REQUEST, userPrompt: '   ' }
+    await orchestrator.orchestrate(req)
+    const call = (mockClient.observe as any).mock.calls[0][0]
+    expect(call.topic).toBeUndefined()
   })
 
   // ── Degraded context fallback ───────────────────────────────────────────────

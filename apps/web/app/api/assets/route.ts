@@ -41,6 +41,7 @@ import {
   listAssets,
   createAsset,
   updateAssetStatus,
+  recordAssetIntelligenceSync,
   getTotalAssetStorageForWorkspace,
   countMonthlyUploadsForWorkspace,
 } from '@brandos/auth'
@@ -52,6 +53,8 @@ import {
   ingestWorkspaceKnowledgeAsset,
 } from '@brandos/control-plane-layer'
 import type { BrandAssetRow } from '@brandos/contracts'
+import { extractDocumentText } from '@/lib/document-extraction'
+import { classifyAssetType } from '@/lib/asset-classification'
 
 const MAX_FILE_SIZE       = 50 * 1024 * 1024 // 50 MB per-file hard cap
 const MAX_FILES_PER_UPLOAD = 20
@@ -233,44 +236,63 @@ export async function POST(req: NextRequest) {
         const { data: transitioned } = await updateAssetStatus(assetId, workspaceId, 'indexed')
         createdAssets.push(transitioned ?? asset)
 
-        // ── Milestone 3, Phase 1: hand off to IntelligenceOS ────────────────
+        // ── Milestone 3, Phase 1 / EM-2.1: hand off to IntelligenceOS ───────
         // Fire-and-forget — never blocks the upload response, and a
         // failure here must never fail the upload (matches
         // ingestWorkspaceKnowledgeAsset's own documented contract).
-        // Images are intentionally excluded: KnowledgeAssetInput's
-        // assetType enum (playbook/framework/methodology/template/
-        // reference) models textual knowledge documents, not brand
-        // imagery/logos — forcing an image through it would misclassify
-        // it, not genuinely extract knowledge from it.
+        // Images are intentionally excluded from THIS call: at upload
+        // time there is no VLM analysis yet (that happens later, in
+        // POST /api/assets/:id/analyze), so there is no real visual
+        // content to send. Image knowledge ingestion happens from the
+        // analyze route once VLM output exists — see that route's EM-2.2/
+        // EM-2.4 handling.
         //
-        // Text extraction is only done here for the two plain-text types
-        // this route already accepts as UTF-8-safe (text/plain,
-        // text/markdown). PDF/DOCX/PPTX are ingested without rawContent —
-        // ingestKnowledgeAsset's own docblock documents this as a
-        // supported degraded mode ("persisted with low confidence"), not
-        // an error; real content extraction for those formats is a
-        // separate, future increment (this route has no PDF/DOCX/PPTX
-        // text-extraction library today, and adding one is out of scope
-        // for this fix).
-        const isPlainText = file.type === 'text/plain' || file.type === 'text/markdown'
-        const rawContent = isPlainText ? buffer.toString('utf8') : undefined
+        // EM-2.1 (Cognitive Platform Evolution Program, Milestone 2):
+        // previously this only extracted text for the two plain-text
+        // types this route already accepted as UTF-8-safe (text/plain,
+        // text/markdown); PDF/DOCX/PPTX were ingested with no rawContent
+        // at all, only ever gaining real content later if a user
+        // happened to click "Analyze." Real extraction now runs here too,
+        // via the same shared module the analyze route uses, so the
+        // first `/v1/knowledge/ingest` call already carries real content
+        // for every format this repo can extract (still just PDF/DOCX/
+        // text/markdown — PPTX extraction and scanned-PDF OCR remain
+        // unimplemented, see apps/web/lib/document-extraction.ts).
+        const rawContent = await extractDocumentText(
+          buffer,
+          file.type || 'application/octet-stream',
+          file.name,
+        )
+          .then((result) => (result.status === 'extracted' ? result.text : undefined))
+          .catch((err: unknown) => {
+            console.error(
+              `[POST /api/assets] extraction failed for ${file.name} (non-fatal, falling back to no rawContent):`,
+              err,
+            )
+            return undefined
+          })
 
         void ingestWorkspaceKnowledgeAsset(
           {
             ownerType: 'workspace',
             workspaceId,
             userId: user.id,
-            assetType: 'reference',
+            assetType: classifyAssetType(file.name, rawContent),
             title: file.name,
             sourceFileRef: storagePath,
           },
           rawContent,
-        ).catch((err: unknown) => {
-          console.error(
-            `[POST /api/assets] knowledge ingestion failed for asset ${assetId} (non-fatal, upload already succeeded):`,
-            err,
-          )
-        })
+        )
+          .then((result) => {
+            if (result) return recordAssetIntelligenceSync(assetId, workspaceId, result.assetId)
+          })
+          .catch((err: unknown) => {
+            console.error(
+              `[POST /api/assets] knowledge ingestion failed for asset ${assetId} (non-fatal, upload already succeeded):`,
+              err,
+            )
+          })
+
       } else {
         createdAssets.push(asset)
       }

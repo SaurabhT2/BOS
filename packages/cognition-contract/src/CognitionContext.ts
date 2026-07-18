@@ -130,6 +130,50 @@ export interface CognitionProvenance {
   readonly lastConsolidatedAt: string | null
 }
 
+// ─── Knowledge / Reasoning / Positioning (ADR-004) ──────────────────────
+
+/**
+ * ADR-004 (Cognitive Consolidation) — recurring themes and named
+ * frameworks a workspace's cognition has retained, from both Knowledge
+ * (uploaded reference material) and Experience (corroborated behavioral
+ * patterns). `confidence`/`hasConflict` are the only synthesis-layer
+ * signals that cross this boundary — per-item provenance (which Learning
+ * or KnowledgeAsset produced which theme) is an internal implementation
+ * detail excluded by this file's own header rule ("no repository/storage
+ * references, no extractor or resolver identifiers").
+ */
+export interface CognitionKnowledgeSection {
+  readonly themes: readonly { readonly name: string; readonly description: string }[]
+  readonly confidence: CognitionConfidence
+  readonly hasConflict: boolean
+}
+
+/**
+ * ADR-004 (Cognitive Consolidation) — conclusions a workspace's cognition
+ * has reached beyond direct recall (analytical/evaluative frameworks,
+ * strategic and decision-making patterns), from both Knowledge and
+ * Experience.
+ */
+export interface CognitionReasoningSection {
+  readonly conclusions: readonly { readonly statement: string }[]
+  readonly confidence: CognitionConfidence
+  readonly hasConflict: boolean
+}
+
+/**
+ * ADR-004 (Cognitive Consolidation) — how a workspace stands relative to
+ * its market or category. Experience-sourced only as of this contract
+ * version — no Knowledge-side extractor produces competitive/market
+ * framing yet (ADR-004 §0.1); this field is not itself narrower for that
+ * reason, a future contract version may add Knowledge-sourced statements
+ * without a shape change here.
+ */
+export interface CognitionPositioningSection {
+  readonly statements: readonly { readonly statement: string }[]
+  readonly confidence: CognitionConfidence
+  readonly hasConflict: boolean
+}
+
 // ─── CognitionContext ────────────────────────────────────────────────────
 
 /**
@@ -153,6 +197,14 @@ export interface CognitionContext {
   readonly identity: IdentityContribution | null
   readonly visualIdentity: VisualIdentityProjection | null
   readonly provenance: CognitionProvenance
+
+  // ── ADR-004 (Cognitive Consolidation) additive fields (minor-version contract evolution) ──
+  // Null when the Subject's current profile has nothing synthesized yet
+  // for that section — the same honest "nothing learned or declared yet"
+  // state `identity` already uses. See ADR-004 §9.
+  readonly knowledge: CognitionKnowledgeSection | null
+  readonly reasoning: CognitionReasoningSection | null
+  readonly positioning: CognitionPositioningSection | null
 }
 
 // ─── CognitionRequest ────────────────────────────────────────────────────
@@ -187,6 +239,38 @@ export interface ObservationInput {
   readonly artifactType?: string
   readonly wasRepaired?: boolean
   readonly observedAt?: string
+  // ── Cognitive Platform Evolution Program, Milestone 3 (Experience Loop) ──
+  // Additive (contract §5 minor-version rule) — see EM-3.4/EM-3.5. Previously
+  // BrandOS resolved provider/model/routing in-process for every generation
+  // and discarded it at the end of the request; IntelligenceOS had no way
+  // to correlate output quality with generation configuration.
+  /** EM-3.4. Which LLM provider served this generation (e.g. 'anthropic', 'openai'). */
+  readonly providerId?: string
+  /** EM-3.4. Which model served this generation (e.g. 'claude-sonnet-4-6'). */
+  readonly modelId?: string
+  /** EM-3.4. BrandOS's routing decision that selected providerId/modelId, when one was made explicitly (vs. default). */
+  readonly routingHint?: string
+  /** EM-3.4. Token accounting, when the provider response exposes it (currently often unavailable — see BrandOS's runtime-config layer). */
+  readonly tokenUsage?: {
+    readonly promptTokens?: number
+    readonly completionTokens?: number
+    readonly totalTokens?: number
+  }
+  /**
+   * EM-3.5. Distinguishes a successful generation (the default — omitting
+   * this field means 'success', so every existing caller's payloads keep
+   * their existing meaning unchanged) from a reported failure. Previously
+   * failed generations produced no observe() call at all and were
+   * invisible to IntelligenceOS. `outputText`/`score` remain required
+   * fields (no contract-breaking change) — callers reporting a failure
+   * should send `outputText: ''`/`score: 0`, which `SignalExtractor`'s
+   * existing `isMeaningfulScore()` guard already treats as producing no
+   * quality-bearing signals, which is the correct behavior for a
+   * generation that never produced real output to judge.
+   */
+  readonly outcome?: 'success' | 'failure'
+  /** EM-3.5. Present when outcome is 'failure' — a short, non-sensitive failure reason (e.g. 'provider_timeout', 'provider_error'). Never a raw error message/stack (may contain sensitive request content). */
+  readonly failureReason?: string
 }
 
 // ─── CognitionSummary ────────────────────────────────────────────────────
@@ -225,5 +309,15 @@ export interface CognitionHealth {
  * platform's own release versioning). Bump the minor version for additive,
  * backward-compatible changes; the major version only for a breaking
  * change, per COGNITION_CONTRACT_SPEC.md §5.
+ *
+ * 1.1.0 (Cognitive Platform Evolution Program, EM-1.1): brings this copy's
+ * CognitionContext back into parity with IntelligenceOS's — adds the
+ * ADR-004 knowledge/reasoning/positioning sections that were previously
+ * synthesized by IntelligenceOS but invisible to BrandOS. This copy
+ * deliberately still omits `CognitionReviewDecision` and
+ * `CognitionProvider.review()` (see CognitionProvider.ts's Option B note
+ * and this package's README) — that is a tracked, pending architecture
+ * decision (EM-4.5 of the Cognitive Platform Evolution Program), not
+ * unintentional drift, and this program does not resolve it unilaterally.
  */
-export const COGNITION_CONTRACT_VERSION = '1.0.0'
+export const COGNITION_CONTRACT_VERSION = '1.1.0'

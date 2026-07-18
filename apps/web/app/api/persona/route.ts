@@ -13,8 +13,32 @@ import {
   deletePersona,
   updatePersona,
 } from '@brandos/auth'
+import { syncWorkspaceConfiguration } from '@brandos/control-plane-layer'
 
 export const runtime = 'nodejs'
+
+/**
+ * EM-1.2 correlation: once a fire-and-forget syncWorkspaceConfiguration()
+ * call resolves, record the returned assetId and sync timestamp on the
+ * local persona row (see supabase/migrations/20260715120000_persona_intelligence_os_sync.sql).
+ * Deliberately not awaited by callers — this runs after the HTTP response
+ * has already been sent; a failure here only means the cache-freshness
+ * columns stay stale, not that the user's edit was lost.
+ */
+async function persistSyncCorrelation(
+  personaId: string,
+  syncPromise: ReturnType<typeof syncWorkspaceConfiguration>,
+): Promise<void> {
+  const result = await syncPromise
+  if (!result) return // sync skipped or failed — nothing to record
+  const { error } = await updatePersona(personaId, {
+    intelligence_asset_id: result.assetId,
+    synced_to_intelligence_os_at: new Date().toISOString(),
+  })
+  if (error) {
+    console.error('[persona/route] Failed to persist IntelligenceOS sync correlation:', error)
+  }
+}
 
 // GET — list all personas for the current user
 export async function GET(_req: NextRequest) {
@@ -65,6 +89,25 @@ export async function POST(req: NextRequest) {
           .select()
           .single()
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        // EM-1.2: IntelligenceOS is now the system of record for explicit
+        // brand configuration — see @brandos/control-plane-layer's
+        // workspace-configuration/service.ts. Fire this after the local
+        // write succeeds and do not fail the request on sync failure
+        // (personas is a write-through CACHE now, but the local write is
+        // still what the user is waiting on).
+        void persistSyncCorrelation(
+          data.id,
+          syncWorkspaceConfiguration({
+            workspaceId,
+            name: data.name,
+            tone: data.tone,
+            domain: data.domain,
+            audience: data.audience,
+            keyThemes: data.key_themes,
+          }),
+        )
+
         return NextResponse.json({ success: true, persona: data })
       }
 
@@ -96,6 +139,22 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'Missing personaId or tone' }, { status: 400 })
         const { data, error } = await updatePersona(personaId, { tone })
         if (error) return NextResponse.json({ error }, { status: 500 })
+
+        // EM-1.2 — see the 'create' branch above for rationale.
+        if (data) {
+          void persistSyncCorrelation(
+            personaId,
+            syncWorkspaceConfiguration({
+              workspaceId,
+              name: data.name,
+              tone: data.tone,
+              domain: data.domain,
+              audience: data.audience,
+              keyThemes: data.key_themes,
+            }),
+          )
+        }
+
         return NextResponse.json({ success: true, persona: data })
       }
 
@@ -125,6 +184,22 @@ export async function POST(req: NextRequest) {
 
         const { data, error } = await updatePersona(personaId, updates)
         if (error) return NextResponse.json({ error }, { status: 500 })
+
+        // EM-1.2 — see the 'create' branch above for rationale.
+        if (data) {
+          void persistSyncCorrelation(
+            personaId,
+            syncWorkspaceConfiguration({
+              workspaceId,
+              name: data.name,
+              tone: data.tone,
+              domain: data.domain,
+              audience: data.audience,
+              keyThemes: data.key_themes,
+            }),
+          )
+        }
+
         return NextResponse.json({ success: true, persona: data })
       }
 

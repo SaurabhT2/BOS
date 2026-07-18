@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-07-09 09:59:52 UTC",
+    "generated": "2026-07-13 16:08:46 UTC",
     "generator": "scripts/generate-dependency-impact.mjs",
     "purpose": "Blast-radius lookup: what breaks, and how badly, if a given package changes — derived from the existing package dependency graph, ALLOWED_SAME_LEVEL_PAIRS, and TABLE_OWNERSHIP (no duplicated source of truth).",
     "authoritySources": [

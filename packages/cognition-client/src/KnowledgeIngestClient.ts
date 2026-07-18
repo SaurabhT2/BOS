@@ -23,7 +23,24 @@
  * apps/web must not talk to IntelligenceOS directly.
  */
 
-const DEFAULT_TIMEOUT_MS = 5000
+/**
+ * Found via a live end-to-end run's server logs (Cognitive Platform
+ * Evolution Program follow-up): `[analyze] knowledge ingestion failed
+ * (non-fatal): This operation was aborted` on the first several documents
+ * of a session, before settling down. Root cause: IntelligenceOS's
+ * `ingestKnowledgeAsset()` runs its full extraction pipeline
+ * (Vocabulary/Framework/Pattern/VisualFeature extractors + validation)
+ * SYNCHRONOUSLY, inside the HTTP request — documented on that method as
+ * temporary ("Sprint 4 will move this behind the event bus"), not a bug
+ * on the IntelligenceOS side. 5 seconds is a reasonable timeout for a
+ * typical write endpoint; it is not reasonable for a call whose
+ * documented server-side behavior is "run a multi-stage extraction
+ * pipeline before responding." 30s gives real headroom for that
+ * documented behavior without hanging indefinitely on a genuinely dead
+ * connection. Revisit downward once IntelligenceOS's Sprint 4 async-queue
+ * work lands and this call goes back to being a fast, thin write.
+ */
+const DEFAULT_TIMEOUT_MS = 30000
 
 export interface KnowledgeIngestClientConfig {
   /** Base URL of the IntelligenceOS API — same value used for cognition. */
@@ -46,7 +63,7 @@ export interface KnowledgeAssetIngestInput {
   readonly userId?: string | null
   readonly projectId?: string | null
   readonly workspaceId?: string | null
-  readonly assetType: 'playbook' | 'framework' | 'methodology' | 'template' | 'reference'
+  readonly assetType: 'playbook' | 'framework' | 'methodology' | 'template' | 'reference' | 'visual_asset'
   readonly title: string
   readonly sourceFileRef?: string | null
 }
@@ -61,10 +78,21 @@ export class KnowledgeIngestClient {
    * (see apps/web/app/api/assets/route.ts for the intended calling
    * convention: called after the upload response's DB write has already
    * succeeded, not blocking it).
+   *
+   * @param existingAssetId  Cognitive Platform Evolution Program, EM-2.2/
+   *   EM-2.6. When supplied, updates that IntelligenceOS knowledge asset in
+   *   place (upsert by id) instead of creating a new one on every call —
+   *   see IntelligenceOS's `ingestKnowledgeAsset()` docblock for why this
+   *   was previously impossible even though the underlying persistence
+   *   already upserted by id. BrandOS should pass the `assetId` returned
+   *   from a prior successful call for the same `brand_assets` row (see
+   *   `brand_assets.intelligence_asset_id`), and omit it only for the
+   *   first ingest of a given asset.
    */
   async ingestKnowledgeAsset(
     asset: KnowledgeAssetIngestInput,
     rawContent?: string,
+    existingAssetId?: string,
   ): Promise<{ assetId: string }> {
     const controller = new AbortController()
     const timeout = setTimeout(
@@ -79,7 +107,7 @@ export class KnowledgeIngestClient {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.config.apiKey}`,
         },
-        body: JSON.stringify({ asset, rawContent }),
+        body: JSON.stringify({ asset, rawContent, existingAssetId }),
         signal: controller.signal,
       })
 

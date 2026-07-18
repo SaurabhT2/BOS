@@ -194,6 +194,21 @@ export {
   getBrandSummary,
 } from './brand-memory/service'
 
+// ─── Workspace Configuration proxy (Cognitive Platform Evolution Program, EM-1.2) ──
+// apps/web routes must use this instead of importing @brandos/cognition-client
+// directly. Enforces the same apps/web → CPL → cognition-client routing rule as
+// the Brand Memory proxy above.
+export {
+  syncWorkspaceConfiguration,
+} from './workspace-configuration/service'
+export type { WorkspaceConfigurationSyncRequest } from './workspace-configuration/service'
+
+// ─── Experience proxy (Cognitive Platform Evolution Program, EM-3.1/EM-3.3) ──
+// apps/web routes must use these instead of importing @brandos/cognition-client
+// directly. Enforces the same apps/web → CPL → cognition-client routing rule.
+export { recordArtifactFeedback, recordUserCorrection } from './experience/service'
+export type { FeedbackEventInput, CorrectionInput } from './experience/service'
+
 // ─── Knowledge ingestion proxy (Milestone 3, Phase 1) ─────────────────────────
 // apps/web routes must use this instead of importing @brandos/cognition-client
 // directly. Enforces the same apps/web → CPL → cognition-client routing rule

@@ -68,7 +68,7 @@ export interface CognitionProvider {
  */
 export function createDegradedCognitionContext(workspaceId: string): CognitionContext {
   return {
-    contractVersion: '1.0.0',
+    contractVersion: '1.1.0',
     workspaceId,
     resolvedAt: new Date().toISOString(),
     confidence: 'degraded',
@@ -86,5 +86,11 @@ export function createDegradedCognitionContext(workspaceId: string): CognitionCo
       signalCount: 0,
       lastConsolidatedAt: null,
     },
+    // ADR-004 (Cognitive Consolidation) — degraded mode has nothing
+    // synthesized, the same honest null identity/visualIdentity above
+    // already establish.
+    knowledge: null,
+    reasoning: null,
+    positioning: null,
   }
 }

@@ -6,6 +6,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabase-server'
+import { createAsset, recordAssetIntelligenceSync } from '@brandos/auth'
+import { ingestWorkspaceKnowledgeAsset } from '@brandos/control-plane-layer'
+import { classifyAssetType } from '@/lib/asset-classification'
 
 export const runtime = 'nodejs'
 
@@ -13,7 +16,7 @@ const MAX_CONTENT_CHARS = 3000
 const TIMEOUT_MS = 10_000
 
 export async function POST(req: NextRequest) {
-  const { user, unauthorized } = await requireUser()
+  const { user, workspaceId, unauthorized } = await requireUser()
   if (unauthorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
@@ -82,6 +85,59 @@ export async function POST(req: NextRequest) {
     if (stripped.length < 50) {
       return NextResponse.json({ error: 'Could not extract readable content from URL' }, { status: 422 })
     }
+
+    // ── EM-2.5 (Cognitive Platform Evolution Program, Milestone 2 — Website
+    // Extraction Persistence): previously this content was returned to the
+    // client and never persisted anywhere — every URL a user extracted was
+    // knowledge acquisition that improved exactly one generation and then
+    // evaporated (see the audit's §2.5). Give it a brand_assets row (for
+    // assetId correlation consistency with file uploads, EM-2.6) and send
+    // it through the same, unchanged /v1/knowledge/ingest path EM-2.1 uses.
+    // Fire-and-forget — must never slow down or fail the extraction
+    // response the studio page is waiting on.
+    void (async () => {
+      try {
+        const { randomUUID } = await import('node:crypto')
+        const assetId = randomUUID()
+        const { data: assetRow, error: createError } = await createAsset({
+          id: assetId,
+          workspace_id: workspaceId,
+          user_id: user!.id,
+          name: parsedUrl.hostname,
+          original_filename: parsedUrl.toString(),
+          mime_type: 'text/html',
+          size_bytes: Buffer.byteLength(stripped, 'utf8'),
+          storage_path: null,
+          status: 'indexed',
+          metadata: { source_url: parsedUrl.toString() },
+          vlm_analysis: null,
+          tags: ['url-extraction'],
+          usage_count: 0,
+          archived_at: null,
+        })
+        if (createError || !assetRow) {
+          console.error('[extract-from-url] failed to create brand_assets row (non-fatal):', createError)
+          return
+        }
+
+        const result = await ingestWorkspaceKnowledgeAsset(
+          {
+            ownerType: 'workspace',
+            workspaceId,
+            userId: user!.id,
+            assetType: classifyAssetType(parsedUrl.toString(), stripped),
+            title: parsedUrl.toString(),
+            sourceFileRef: parsedUrl.toString(),
+          },
+          stripped,
+        )
+        if (result) {
+          await recordAssetIntelligenceSync(assetRow.id, workspaceId, result.assetId)
+        }
+      } catch (persistErr) {
+        console.error('[extract-from-url] knowledge persistence failed (non-fatal):', persistErr)
+      }
+    })()
 
     return NextResponse.json({
       success: true,

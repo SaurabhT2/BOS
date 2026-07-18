@@ -32,10 +32,16 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabase-server'
-import { getAsset, updateAssetVlmResult, updateAssetStatus, getDefaultPersona, updatePersona } from '@brandos/auth'
+import {
+  getAsset,
+  updateAssetVlmResult,
+  updateAssetStatus,
+  recordAssetIntelligenceSync,
+} from '@brandos/auth'
 import { getSupabaseAdmin } from '@brandos/auth'
 import { getProviderKey } from '@brandos/runtime-config'
-import { recordBrandMemoryObservation } from '@brandos/control-plane-layer'
+import { ingestWorkspaceKnowledgeAsset } from '@brandos/control-plane-layer'
+import { extractDocumentText, isRealExtractedText } from '@/lib/document-extraction'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -176,50 +182,16 @@ async function analyzeDocument(
   filename: string,
   apiKeyOverride?: string
 ): Promise<{ analysis: Record<string, unknown>; textContent: string }> {
-  let textContent = ''
-  const isTextType = mimeType === 'text/plain' || mimeType === 'text/markdown'
-  const isPdf  = mimeType === 'application/pdf'
-  const isDocx = mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-              || mimeType === 'application/msword'
-  const isPptx = mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-              || mimeType === 'application/vnd.ms-powerpoint'
-  const isSvg  = mimeType === 'image/svg+xml'
-
-  if (isTextType || isSvg) {
-    // SVG is XML text — read directly; it won't give a full text description
-    // but the filename + XML structure is more useful than a binary placeholder.
-    textContent = fileBytes.toString('utf-8').slice(0, 8000)
-  } else if (isPdf) {
-    try {
-      // pdf-parse v2.x exports a named class, not a default function.
-      const { PDFParse } = await import('pdf-parse')
-      const parser = new PDFParse({ data: fileBytes })
-      const result = await parser.getText()
-      textContent = (result.text ?? '').slice(0, 8000)
-      if (!textContent.trim()) {
-        // Scanned PDF — no text layer; fall back to placeholder (OCR out of scope).
-        textContent = `[Scanned PDF: ${filename}, ${fileBytes.length} bytes — OCR not implemented]`
-      }
-    } catch {
-      textContent = `[PDF extraction failed: ${filename}]`
-    }
-  } else if (isDocx) {
-    try {
-      const mammoth = await import('mammoth')
-      const result = await mammoth.extractRawText({ buffer: fileBytes })
-      textContent = (result.value ?? '').slice(0, 8000)
-    } catch {
-      textContent = `[DOCX extraction failed: ${filename}]`
-    }
-  } else if (isPptx) {
-    // PPTX is a ZIP of slide XML — basic extraction via jszip, if available.
-    // For MVP treat as placeholder; text extraction added when jszip is added to deps.
-    textContent = `[PPTX: ${filename}, ${fileBytes.length} bytes — text extraction not yet implemented]`
-  } else {
-    textContent = `[Binary document: ${filename}, ${mimeType} — format not supported for extraction]`
-  }
-
-  const isReadableText = isTextType || isSvg
+  // EM-2.1: extraction itself now lives in a shared module so
+  // app/api/assets/route.ts (upload time) can run the same logic instead
+  // of only ever extracting when a user clicks "Analyze." See
+  // apps/web/lib/document-extraction.ts.
+  const { text: textContent, status: extractionStatus } = await extractDocumentText(
+    fileBytes,
+    mimeType,
+    filename,
+  )
+  const isReadableText = extractionStatus === 'extracted'
 
   const prompt = `You are analyzing a document named "${filename}" (${mimeType}).
 
@@ -336,115 +308,156 @@ export async function POST(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: updateError }, { status: 500 })
     }
 
-    // ── Feed brand signal learning (fire-and-forget) ──────────────────────
-    // asset analysis result is now persisted in brand_assets.vlm_analysis.
-    // Forward the extracted content to BrandMemoryServiceV2.learn() so that
-    // StyleProjectionResolver can incorporate asset knowledge into future
-    // generation prompts — closing the dead-end at brand_assets.vlm_analysis.
+    // ── Feed brand knowledge (genuinely fire-and-forget) ────────────────────
+    // EM-2.2 (Cognitive Platform Evolution Program, Milestone 2 — Knowledge/
+    // Experience Channel Correction): this used to call
+    // recordBrandMemoryObservation() (CognitionProvider.observe(), the
+    // Experience channel) for both document and image analysis results.
+    // That was a routing bug, not a design choice — the audit that
+    // preceded this program found real uploaded document/image content
+    // being reported as a generic generation "observation" instead of
+    // Knowledge, gated on an unrelated confidence heuristic, and never
+    // reaching IntelligenceOS's purpose-built extraction pipeline
+    // (KnowledgeAssetExtractor / VisualFeatureExtractor). Both branches
+    // below now call ingestWorkspaceKnowledgeAsset() — the same endpoint
+    // the upload route already uses (EM-2.1) — passing
+    // asset.intelligence_asset_id as existingAssetId so re-analysis
+    // updates the same knowledge asset instead of creating a duplicate
+    // every time (EM-2.6's correlation column made this possible; see
+    // IntelligenceOS's ingestKnowledgeAsset() docblock for why an
+    // existingAssetId was previously a no-op even when supplied).
     //
-    // Architectural rule: apps/web → CPL → BI.
-    // Score gate: BrandMemoryServiceV2 skips signals below score_threshold
-    // (default 40), so binary placeholder results (confidence=0) are
-    // correctly blocked without reaching the DB. Non-fatal.
+    // Architectural rule: apps/web → CPL → cognition-client. Non-fatal —
+    // a failure here must never fail the analyze response, which has
+    // already succeeded by this point (asset.vlm_analysis is persisted
+    // above).
+    //
+    // Follow-up fix (found via a live end-to-end run's server logs): this
+    // block used to `await` the ingest call directly in the request
+    // handler, which — combined with IntelligenceOS's documented
+    // synchronous extraction pipeline (see KnowledgeIngestClient.ts's
+    // updated timeout comment) — meant a slow first-few-requests warm-up
+    // period could genuinely exceed the client timeout, logging
+    // "This operation was aborted" for real, successfully-VLM-analyzed
+    // documents. The `signalText` computation below is cheap/synchronous
+    // and stays inline; only the network call is detached, matching
+    // apps/web/app/api/assets/route.ts's already-correct pattern — this
+    // handler no longer waits on IntelligenceOS at all before responding.
     try {
       const assetScore = typeof analysis.confidence === 'number'
         ? (analysis.confidence as number)
         : 0
 
       if (assetScore > 0) {
-        // BUGFIX: the regex-based Class A/B extractors in BrandMemoryServiceV2
-        // (extractTitlePatterns, extractHookPatterns, extractValueFrames,
-        // extractStructuralArcs, extractEvidencePatterns, etc.) need real
-        // multi-line document structure — headers, lists, numbered steps,
-        // quotes, statistics — to find anything. A one-sentence AI summary
-        // essentially never contains that structure, so those extractors
-        // silently returned empty and only the always-fires fallbacks
-        // (tone/hook-style) ever populated, regardless of what was uploaded.
-        //
-        // For documents, use the real extracted body (documentTextContent)
-        // as the primary signal source — it's the only thing in this
-        // function that actually reflects the uploaded file. The AI summary
-        // fields are appended as supplementary context, not the source.
-        // documentTextContent is only a real extraction when it doesn't
-        // start with the '[' placeholder markers used for unsupported/failed
-        // extraction (see analyzeDocument: "[PDF extraction failed: ...]",
-        // "[Scanned PDF: ...]", "[PPTX: ...]", "[Binary document: ...]").
-        const hasRealDocumentText =
-          typeof documentTextContent === 'string' &&
-          documentTextContent.trim().length > 0 &&
-          !documentTextContent.trim().startsWith('[')
+        let knowledgeAssetType: 'reference' | 'visual_asset' = 'reference'
+        let signalText = ''
 
-        const summaryFragment = [
-          typeof analysis.description === 'string' ? analysis.description : null,
-          ...(Array.isArray(analysis.recommendations) ? analysis.recommendations : []),
-          ...(Array.isArray(analysis.topics) ? analysis.topics : []),
-          typeof analysis.mood === 'string' ? `Mood: ${analysis.mood}` : null,
-        ].filter(Boolean).join('\n')
+        if (isImage) {
+          // EM-2.4: format the VLM's structured color/typography output as
+          // flowing text containing real hex-color and font-family-style
+          // declarations, so IntelligenceOS's VisualFeatureExtractor
+          // (HEX_COLOR_RE / FONT_FAMILY_RE, MIN_VISUAL_SIGNALS=2) actually
+          // detects visual signal from it — a JSON.stringify() dump would
+          // not reliably match those patterns. See that file's header:
+          // its gating is content-signal-based, not assetType-based, so
+          // this formatting is what actually makes ingestion useful for
+          // images, not the assetType value alone.
+          const colors = (analysis as any).colors ?? {}
+          const typography = (analysis as any).typography ?? {}
+          const primaryColors: string[] = Array.isArray(colors.primary) ? colors.primary : []
+          const accentColors: string[] = Array.isArray(colors.accent) ? colors.accent : []
 
-        const signalText = hasRealDocumentText
-          ? [documentTextContent, summaryFragment].filter(Boolean).join('\n\n')
-          : summaryFragment
+          const lines = [
+            `Brand asset visual analysis for "${asset.original_filename ?? asset.name ?? id}":`,
+            primaryColors.length ? `Primary colors: ${primaryColors.join(', ')}` : null,
+            accentColors.length ? `Accent colors: ${accentColors.join(', ')}` : null,
+            typography.personality
+              ? `font: ${typography.personality}${typography.weight ? ` ${typography.weight}` : ''}`
+              : null,
+            typeof analysis.mood === 'string' ? `Mood: ${analysis.mood}` : null,
+            typeof analysis.description === 'string' ? analysis.description : null,
+            ...(Array.isArray(analysis.recommendations) ? analysis.recommendations : []),
+            ...(Array.isArray(analysis.topics) ? analysis.topics : []),
+          ].filter(Boolean)
+
+          knowledgeAssetType = 'visual_asset'
+          signalText = lines.join('\n')
+        } else {
+          // For documents, use the real extracted body (documentTextContent)
+          // as the primary signal source — it's the only thing in this
+          // function that actually reflects the uploaded file. The AI
+          // summary fields are appended as supplementary context, not the
+          // source. documentTextContent is only a real extraction when it
+          // doesn't start with the '[' placeholder markers used for
+          // unsupported/failed extraction (see analyzeDocument /
+          // apps/web/lib/document-extraction.ts).
+          const hasRealDocumentText = isRealExtractedText(documentTextContent)
+
+          const summaryFragment = [
+            typeof analysis.description === 'string' ? analysis.description : null,
+            ...(Array.isArray(analysis.recommendations) ? analysis.recommendations : []),
+            ...(Array.isArray(analysis.topics) ? analysis.topics : []),
+            typeof analysis.mood === 'string' ? `Mood: ${analysis.mood}` : null,
+          ].filter(Boolean).join('\n')
+
+          knowledgeAssetType = 'reference'
+          signalText = hasRealDocumentText
+            ? [documentTextContent, summaryFragment].filter(Boolean).join('\n\n')
+            : summaryFragment
+        }
 
         if (signalText.trim()) {
-          await recordBrandMemoryObservation({
-            requestId:     `asset_${id}`,
-            workspaceId,
-            artifactType:  isImage ? 'image_asset' : 'document_asset',
-            artifactText:  signalText,
-            artifactScore: assetScore,
-            topic:         asset.original_filename ?? asset.name ?? id,
-            wasRepaired:   false,
-            observedAt:    new Date().toISOString(),
-          })
-        }
-      }
-    } catch (biErr: any) {
-      // Non-fatal: asset analysis persisted successfully above.
-      console.warn('[analyze] brand signal learning failed (non-fatal):', biErr?.message)
-    }
-
-    // ── Merge image analysis into the workspace's default persona ────────────
-    // Ported from the prior duplicate implementation in /api/assets/[id]/route.ts
-    // during the redesign consolidation (analyze logic now lives only here).
-    // When a brand-asset image analysis comes back with reasonable confidence,
-    // fold its color palette and typography personality into the default
-    // persona's visual_style, so future generation prompts that read
-    // persona.visual_style pick it up. Confined to images only — document
-    // analysis has no comparable visual fields. Best-effort: failure here must
-    // not fail the analyze request, since the VLM result has already been
-    // persisted successfully above.
-    if (isImage && typeof analysis.confidence === 'number' && analysis.confidence > 50 && user) {
-      try {
-        const { data: persona } = await getDefaultPersona(user.id)
-        if (persona) {
-          const existingStyle = (persona.visual_style as any) ?? {}
-          const newColors = (analysis as any).colors?.primary ?? []
-          const mergedPalette = [
-            ...new Set([...newColors, ...(existingStyle?.visualStyle?.palette ?? [])]),
-          ].slice(0, 6)
-
-          await updatePersona(persona.id, {
-            visual_style: {
-              ...existingStyle,
-              visualStyle: {
-                ...(existingStyle.visualStyle ?? {}),
-                palette: mergedPalette,
-                vlm_confidence: analysis.confidence,
-                last_vlm_analysis: new Date().toISOString(),
-              },
-              design_profile: {
-                ...(existingStyle.design_profile ?? {}),
-                brand_colors: mergedPalette,
-                typography: (analysis as any).typography?.personality,
-              },
+          void ingestWorkspaceKnowledgeAsset(
+            {
+              ownerType: 'workspace',
+              workspaceId,
+              userId: user.id,
+              assetType: knowledgeAssetType,
+              title: asset.original_filename ?? asset.name ?? id,
+              sourceFileRef: asset.storage_path ?? undefined,
             },
-          })
+            signalText,
+            asset.intelligence_asset_id ?? undefined,
+          )
+            .then((result) => {
+              if (result) return recordAssetIntelligenceSync(id, workspaceId, result.assetId)
+            })
+            .catch((kiErr: unknown) => {
+              // Non-fatal: asset analysis already succeeded and was
+              // returned to the client before this promise settles.
+              console.warn('[analyze] knowledge ingestion failed (non-fatal):', (kiErr as Error)?.message)
+            })
         }
-      } catch (mergeErr) {
-        // Non-fatal — the asset analysis itself already succeeded and was persisted.
-        console.error('[analyze] persona visual_style merge failed (non-fatal):', mergeErr)
       }
+    } catch (kiErr: any) {
+      // Synchronous errors only now (e.g. malformed `analysis` shape) —
+      // the network call itself can no longer throw into this catch,
+      // it has its own .catch() above.
+      console.warn('[analyze] knowledge ingestion setup failed (non-fatal):', kiErr?.message)
     }
+
+
+    // ── Visual identity now flows to IntelligenceOS, not persona.visual_style ──
+    // EM-1.4 (Cognitive Platform Evolution Program, Milestone 1 — Visual
+    // Identity Ownership Transfer): this block used to fold the VLM's color
+    // palette and typography directly into personas.visual_style, making
+    // BrandOS the system of record for visual identity — a direct violation
+    // of "IntelligenceOS owns Identity" (see the audit's §1.5, §4.2). That
+    // signal now reaches IntelligenceOS through the knowledge-ingest call
+    // above (EM-2.4: assetType 'visual_asset', hex colors + typography
+    // formatted for VisualFeatureExtractor), which did not exist before this
+    // program and is the correct destination.
+    //
+    // personas.visual_style is NOT deleted — it remains a read cache other
+    // BrandOS UI may still consult — but this route no longer computes or
+    // writes its content directly. Hydrating it FROM IntelligenceOS's
+    // resolved CognitionContext.visualIdentity (so the cache reflects what
+    // IntelligenceOS actually learned, not a duplicate local computation) is
+    // EM-4.3's concern (Visual Identity Consumption), not this analyze
+    // route's — that EM reads resolveCognitionContext() output during
+    // generation; a persona-display-time cache refresh from the same source
+    // is a natural, still-open follow-up this program did not schedule a
+    // dedicated EM for. Flagged here rather than silently left unmentioned.
 
     return NextResponse.json({
       success: true,

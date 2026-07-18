@@ -9,6 +9,9 @@
  *   2. bootstrapGovernancePlugins() — registers governance plugin registry
  *   3. initCognitionClient()        — PLATFORM SPLIT: HTTP client wired to IntelligenceOS
  *   3b. initKnowledgeIngestClient() — Milestone 3, Phase 1: knowledge ingestion HTTP client
+ *   3c. initWorkspaceConfigurationClient() — EM-1.2: workspace configuration sync HTTP client
+ *   3d. initFeedbackEventClient()          — EM-3.1: feedback event HTTP client
+ *   3e. initCorrectionClient()             — EM-3.3: correction HTTP client
  *   4. bootstrapContractAssembler() — registers contributors (Identity, Persona, Intent, Runtime, Artifact)
  *   5. bootstrapSkillRuntime()     — ISkill runtime
  *   6. SupabaseAdminSettingsService.load() — admin settings cold-start wire (SPRINT1-FIX F-03)
@@ -131,6 +134,70 @@ export async function register() {
     } catch (err: any) {
       console.error('[instrumentation] Knowledge ingest client init failed:', err.message)
       console.warn('[instrumentation] Knowledge ingestion disabled — asset uploads will continue without IntelligenceOS extraction')
+    }
+
+    // ── 3c. Workspace configuration client initialization (EM-1.2) ────────────
+    // Cognitive Platform Evolution Program, Milestone 1. Same IntelligenceOS
+    // deployment/credentials as steps 3 and 3b, separate client/singleton
+    // (see cognition-client/src/WorkspaceConfigurationClient.ts). No
+    // degraded-provider requirement, same reasoning as step 3b:
+    // getGlobalWorkspaceConfigurationClient() returns null rather than
+    // throwing when unconfigured, and @brandos/auth's persona write path
+    // treats a null/failed sync as "the local cache write still succeeds,
+    // IntelligenceOS sync is skipped," not a failed persona edit.
+    try {
+      const { initWorkspaceConfigurationClient } = await import('@brandos/cognition-client')
+      const intelligenceOsApiUrl = process.env.INTELLIGENCE_OS_API_URL
+      const intelligenceOsApiKey = process.env.INTELLIGENCE_OS_API_KEY
+
+      if (intelligenceOsApiUrl && intelligenceOsApiKey) {
+        initWorkspaceConfigurationClient({
+          baseUrl: intelligenceOsApiUrl,
+          apiKey: intelligenceOsApiKey,
+        })
+        console.info('[instrumentation] Workspace configuration client initialized (IntelligenceOS HTTP API)')
+      } else {
+        console.warn('[instrumentation] INTELLIGENCE_OS_API_URL / INTELLIGENCE_OS_API_KEY not set — workspace configuration sync disabled (persona edits will stay local to BrandOS)')
+      }
+    } catch (err: any) {
+      console.error('[instrumentation] Workspace configuration client init failed:', err.message)
+      console.warn('[instrumentation] Workspace configuration sync disabled — persona edits will continue to stay local to BrandOS')
+    }
+
+    // ── 3d. Feedback event client initialization (EM-3.1) ──────────────────────
+    // Cognitive Platform Evolution Program, Milestone 3. Same IntelligenceOS
+    // deployment/credentials as steps 3, 3b, 3c.
+    try {
+      const { initFeedbackEventClient } = await import('@brandos/cognition-client')
+      const intelligenceOsApiUrl = process.env.INTELLIGENCE_OS_API_URL
+      const intelligenceOsApiKey = process.env.INTELLIGENCE_OS_API_KEY
+
+      if (intelligenceOsApiUrl && intelligenceOsApiKey) {
+        initFeedbackEventClient({ baseUrl: intelligenceOsApiUrl, apiKey: intelligenceOsApiKey })
+        console.info('[instrumentation] Feedback event client initialized (IntelligenceOS HTTP API)')
+      } else {
+        console.warn('[instrumentation] INTELLIGENCE_OS_API_URL / INTELLIGENCE_OS_API_KEY not set — feedback forwarding disabled (feedback will stay local to BrandOS)')
+      }
+    } catch (err: any) {
+      console.error('[instrumentation] Feedback event client init failed:', err.message)
+      console.warn('[instrumentation] Feedback forwarding disabled — feedback will continue to stay local to BrandOS')
+    }
+
+    // ── 3e. Correction client initialization (EM-3.3) ──────────────────────────
+    try {
+      const { initCorrectionClient } = await import('@brandos/cognition-client')
+      const intelligenceOsApiUrl = process.env.INTELLIGENCE_OS_API_URL
+      const intelligenceOsApiKey = process.env.INTELLIGENCE_OS_API_KEY
+
+      if (intelligenceOsApiUrl && intelligenceOsApiKey) {
+        initCorrectionClient({ baseUrl: intelligenceOsApiUrl, apiKey: intelligenceOsApiKey })
+        console.info('[instrumentation] Correction client initialized (IntelligenceOS HTTP API)')
+      } else {
+        console.warn('[instrumentation] INTELLIGENCE_OS_API_URL / INTELLIGENCE_OS_API_KEY not set — correction recording disabled')
+      }
+    } catch (err: any) {
+      console.error('[instrumentation] Correction client init failed:', err.message)
+      console.warn('[instrumentation] Correction recording disabled')
     }
 
     // ── 4. Contract Assembler (no bootstrap needed) ───────────────────────────

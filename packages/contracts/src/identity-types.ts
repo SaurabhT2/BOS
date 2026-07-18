@@ -261,6 +261,33 @@ export interface IObservationEvent {
   readonly wasRepaired: boolean
   readonly observedAt: string
   readonly visualMetadata?: ArtifactVisualMetadata
+  /**
+   * Cognitive Platform Evolution Program, Milestone 3 (Experience Loop),
+   * EM-3.4/EM-3.5 — added here (not just on ObservationInput) after a live
+   * end-to-end run showed these fields reaching IntelligenceOS as
+   * `undefined` on the observation that actually survives Brand Memory's
+   * Gate 1 score threshold and gets processed by the Learning Pipeline.
+   * Root cause: `recordBrandMemoryAfterPipeline()`
+   * (control-plane-layer/src/artifact-pipeline.ts) reports the REAL,
+   * post-governance-repair score through THIS type — the orchestrator's
+   * own `observe()` call (which EM-3.4 originally enriched) fires with
+   * score=0 and is explicitly documented as "redundant but harmless"
+   * because Brand Memory's Gate 1 drops anything below its score
+   * threshold. Enriching only `ObservationInput`/`orchestrator.ts` missed
+   * the call site that actually matters. See
+   * `normalizeObservationInput()` below and
+   * `recordBrandMemoryAfterPipeline()`'s updated call.
+   */
+  readonly providerId?: string
+  readonly modelId?: string
+  readonly routingHint?: string
+  readonly tokenUsage?: {
+    readonly promptTokens?: number
+    readonly completionTokens?: number
+    readonly totalTokens?: number
+  }
+  readonly outcome?: 'success' | 'failure'
+  readonly failureReason?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

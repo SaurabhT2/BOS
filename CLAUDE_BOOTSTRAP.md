@@ -1,6 +1,6 @@
 # CLAUDE_BOOTSTRAP.md (Generated)
 
-> **Generated:** 2026-07-09 09:59:55 UTC
+> **Generated:** 2026-07-13 16:08:47 UTC
 > **Authority:** synthesized from `.context/*.generated.*` — see `scripts/generate-claude-bootstrap.mjs`.
 > This is the canonical entry point for a new Claude/GPT/Cursor agent working on BrandOS. It is a
 > *synthesis*, not a replacement — every section cites the generated artifact it was derived from so
@@ -15,7 +15,7 @@
 - **Architectural layers:** 12 (L0–L11)
 - **Critical packages:** `@brandos/contracts`, `@brandos/control-plane-layer`, `@brandos/shared-utils`, `@platform/cognition-contract`
 - **Behavior contracts tracked:** 6
-- **Generated:** 2026-07-09 09:59:55 UTC
+- **Generated:** 2026-07-13 16:08:47 UTC
 
 This document is itself generated — see `scripts/generate-claude-bootstrap.mjs`. It synthesizes the architecture-intelligence layer below; it does not replace any single file in it.
 

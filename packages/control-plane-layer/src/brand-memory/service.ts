@@ -61,9 +61,15 @@ export async function recordBrandMemoryObservation(
  * resolveBrandCognitionContext — resolve the CognitionContext for generation.
  * Proxy for: CognitionProvider.resolveCognitionContext()
  *
- * PLATFORM SPLIT / KNOWN GAP: the request shape is now `{ workspaceId,
- * taskType? }` only — no `persona`/`brandContext` payload is forwarded.
- * See packages/cognition-contract/README.md, "Known contract gaps", item 1.
+ * PLATFORM SPLIT: the request shape is `{ workspaceId, taskType? }` only —
+ * no `persona`/`brandContext` payload is forwarded here, and that is by
+ * design, not a gap: explicit workspace configuration now reaches
+ * IntelligenceOS through a separate ingestion call
+ * (`syncWorkspaceConfiguration`, `./workspace-configuration/service.ts`,
+ * EM-1.2 of the Cognitive Platform Evolution Program) rather than being
+ * piggybacked onto every resolve() request. See
+ * packages/cognition-contract/README.md — the item this used to reference
+ * as an open gap is now resolved there.
  */
 export async function resolveBrandCognitionContext(request: {
   workspaceId: string
@@ -96,7 +102,28 @@ export async function getBrandSummary(params: {
 
 // ─── Internal mapping ──────────────────────────────────────────────────────
 
-function normalizeObservationInput(
+/**
+ * Bug found via a live end-to-end run's server logs (Cognitive Platform
+ * Evolution Program follow-up): this function silently dropped
+ * providerId/modelId/routingHint/tokenUsage/outcome/failureReason even
+ * after IObservationEvent gained them, because it builds its return value
+ * as an explicit field-by-field allowlist rather than a spread — exactly
+ * the kind of narrowing that made the original EM-3.4 enrichment
+ * (applied to `orchestrator.ts`'s direct `observe()` call) invisible on
+ * the observation that actually matters, the one
+ * `recordBrandMemoryAfterPipeline()` sends through this function with the
+ * real, post-repair governance score. Now passes them through.
+ */
+/**
+ * Exported for direct unit testing only (same "internal, testing-only"
+ * convention as this codebase's `_resetGlobalXForTests` helpers) — not
+ * part of this module's intended public surface. See
+ * `__tests__/unit/normalizeObservationInput.test.ts`, which locks in the
+ * exact bug a live end-to-end run found: this function used to silently
+ * drop providerId/modelId/routingHint/tokenUsage/outcome/failureReason
+ * even after `IObservationEvent` gained them.
+ */
+export function normalizeObservationInput(
   input: IObservationEvent
 ): {
   workspaceId: string
@@ -107,6 +134,12 @@ function normalizeObservationInput(
   artifactType?: string
   wasRepaired?: boolean
   observedAt?: string
+  providerId?: string
+  modelId?: string
+  routingHint?: string
+  tokenUsage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+  outcome?: 'success' | 'failure'
+  failureReason?: string
 } {
   const raw = input as unknown as Record<string, unknown>
   return {
@@ -118,5 +151,13 @@ function normalizeObservationInput(
     artifactType: raw.artifactType as string | undefined,
     wasRepaired: raw.wasRepaired as boolean | undefined,
     observedAt: raw.observedAt as string | undefined,
+    providerId: raw.providerId as string | undefined,
+    modelId: raw.modelId as string | undefined,
+    routingHint: raw.routingHint as string | undefined,
+    tokenUsage: raw.tokenUsage as
+      | { promptTokens?: number; completionTokens?: number; totalTokens?: number }
+      | undefined,
+    outcome: raw.outcome as 'success' | 'failure' | undefined,
+    failureReason: raw.failureReason as string | undefined,
   }
 }

@@ -380,6 +380,18 @@ export interface PersonaRow {
   is_default: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * Cognitive Platform Evolution Program, EM-1.2/EM-1.4. IntelligenceOS
+   * knowledge-asset id from the most recent successful
+   * `POST /v1/workspace-configuration` sync. Null until first synced.
+   * Nullable/optional here (rather than required) so existing code that
+   * constructs a PersonaRow-shaped object without these fields (tests,
+   * older call sites) does not need to change to keep compiling — see
+   * supabase/migrations/20260715120000_persona_intelligence_os_sync.sql.
+   */
+  intelligence_asset_id?: string | null;
+  /** Timestamp of the most recent successful sync above. Null/undefined = never synced or stale. */
+  synced_to_intelligence_os_at?: string | null;
 }
 
 /** Omit server-managed fields when inserting a new persona */
@@ -703,6 +715,18 @@ export interface BrandAssetRow {
    * (Phase B — not implemented in P1).
    */
   archived_at: string | null;
+
+  /**
+   * Cognitive Platform Evolution Program, EM-2.6 (Ingestion Correlation &
+   * Confirmation). IntelligenceOS knowledge-asset id from the most recent
+   * successful `POST /v1/knowledge/ingest` call for this asset — null
+   * until ingested (or if ingestion was skipped/failed; ingestion is
+   * best-effort, see `apps/web/app/api/assets/route.ts`). Passed back as
+   * `existingAssetId` on re-ingestion (e.g. from the Analyze action) so
+   * IntelligenceOS updates the same knowledge asset instead of creating a
+   * duplicate every time a user re-analyzes the same file.
+   */
+  intelligence_asset_id?: string | null;
 }
 
 /**

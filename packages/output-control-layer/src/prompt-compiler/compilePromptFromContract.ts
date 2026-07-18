@@ -73,7 +73,7 @@ export const ARTIFACT_TASK_PROMPTS: Readonly<Partial<Record<string, string>>> = 
 export function compilePromptFromContract(
   contract: ResolvedGenerationContract
 ): CompiledPrompt {
-  const { identity, persona, intent, artifact, runtime, skill } = contract;
+  const { identity, persona, intent, artifact, runtime, skill, knowledge } = contract;
 
   const sections: string[] = [];
   const diagnostics: string[] = [];  // FIX-LOG-001: forensic prompt diagnostics
@@ -118,6 +118,21 @@ export function compilePromptFromContract(
     );
   } else {
     diagnostics.push('identity:NO');
+  }
+
+  // 2b. Knowledge/reasoning/positioning (ADR-004 Cognitive Consolidation).
+  // EM-4.1 (Cognitive Platform Evolution Program, Milestone 4): the first
+  // consumer of CognitionContext.knowledge/reasoning/positioning, which
+  // BrandOS's contract copy has carried since EM-1.1 but nothing read
+  // until now (see the audit's §1.2 — these fields were being silently
+  // computed by IntelligenceOS and discarded at the BrandOS boundary).
+  if (knowledge) {
+    sections.push(buildKnowledgeSection(knowledge));
+    diagnostics.push(
+      `knowledge:YES(themes=${knowledge.themes?.length ?? 0},conclusions=${knowledge.conclusions?.length ?? 0},positioning=${knowledge.positioningStatements?.length ?? 0},hasConflict=${knowledge.hasConflict ?? false})`
+    );
+  } else {
+    diagnostics.push('knowledge:NO');
   }
 
   // 3. Artifact schema instruction — SINGLE source via CAROUSEL_SCHEMA_INSTRUCTION
@@ -454,6 +469,36 @@ function buildIdentitySection(identity: NonNullable<ResolvedGenerationContract['
     if (v.primaryColor)  lines.push(`Visual: primary color ${v.primaryColor}.`);
     if (v.fontStyle)     lines.push(`Visual: font style ${v.fontStyle}.`);
     if (v.layoutDensity) lines.push(`Visual: layout density ${v.layoutDensity}.`);
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// buildKnowledgeSection (EM-4.1 — Cognitive Platform Evolution Program)
+// From IKnowledgeContribution — ADR-004's consolidated knowledge/reasoning/
+// positioning. A hedge language cue is added when hasConflict is true,
+// rather than silently presenting contested content as settled fact.
+// ---------------------------------------------------------------------------
+
+function buildKnowledgeSection(knowledge: NonNullable<ResolvedGenerationContract['knowledge']>): string {
+  const lines: string[] = ['[Brand Knowledge & Positioning]'];
+
+  if (knowledge.hasConflict) {
+    lines.push('Note: some of the following reflects conflicting signal — treat as directional, not settled fact.');
+  }
+
+  if (knowledge.themes?.length) {
+    const themeLines = knowledge.themes.slice(0, 4).map((t) => `${t.name} — ${t.description}`);
+    lines.push(`Recurring themes: ${themeLines.join(' | ')}.`);
+  }
+
+  if (knowledge.conclusions?.length) {
+    lines.push(`Established conclusions: ${knowledge.conclusions.slice(0, 3).join(' | ')}.`);
+  }
+
+  if (knowledge.positioningStatements?.length) {
+    lines.push(`Market positioning: ${knowledge.positioningStatements.slice(0, 3).join(' | ')}.`);
   }
 
   return lines.join('\n');

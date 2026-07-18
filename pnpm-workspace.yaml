@@ -1,17 +1,3 @@
-# pnpm-workspace.yaml
-#
-# Engineering Workflow Audit & Consolidation finding: this file did not
-# exist in the repository, even though package.json's "workspaces" field
-# (an npm/yarn-style declaration pnpm does not read) declared the same
-# globs, and pnpm-lock.yaml already contains workspace-linked importers
-# (e.g. "link:../../packages/artifact-config") from a prior install that
-# had a workspace file. Without pnpm-workspace.yaml, a fresh `pnpm install`
-# cannot resolve any `workspace:*` dependency or link any local package —
-# this is the install/bootstrap workflow's single point of failure, and
-# would affect every package in the repo, not just ones added in a
-# particular milestone. Restored to match package.json's existing globs
-# exactly; no glob pattern was changed or added.
-
 packages:
-  - packages/*
-  - apps/*
+  - "packages/*"
+  - "apps/*"

@@ -80,6 +80,22 @@ export class CPLOrchestrator {
     const brandMemoryApplied = ctx.applyBrandMemory !== false
     logger.info(`[CPLOrchestrator] brandMemoryApplied=${brandMemoryApplied}`)
 
+    // Completion Mission (RCA finding — missing topic propagation): every
+    // observe() call below used to omit `topic` entirely, so
+    // IntelligenceOS's SignalExtractor.extractFromObservation() could never
+    // emit its `expertise_domains` signal (gated on `input.topic` being
+    // present) — every observation was capped at exactly one signal
+    // (`success_metrics`). `ContractAssembler.assemble()` derives the
+    // compiled prompt's topic identically
+    // (`topic: ctx.userPrompt.slice(0, 120)` — see
+    // output-control-layer/src/contract-assembler/ContractAssembler.ts),
+    // so mirroring that same derivation here reports the same topic
+    // PromptCompiler actually anchored the generation to, not a
+    // second, independently-computed value.
+    const observedTopic = request.userPrompt?.trim()
+      ? request.userPrompt.slice(0, 120)
+      : undefined
+
     let content:          string
     let governanceScore = 0   // FIX-SCORE-001: was 80 hardcoded; real score set by pipeline
     let wasRepaired     = false
@@ -87,20 +103,57 @@ export class CPLOrchestrator {
     let resolvedProvider: string | undefined
     let resolvedModel:    string | undefined
 
-    if (isStructured) {
-      const result = await this.runStructuredPipeline(ctx, taskType)
-      // content is the raw LLM text — executeArtifactPipeline will compile+govern it
-      content           = result.rawText
-      governanceScore   = result.governanceScore
-      wasRepaired       = result.wasRepaired
-      resolvedProvider  = result.resolvedProvider
-      resolvedModel     = result.resolvedModel
-    } else {
-      const result = await this.runTextPipeline(ctx, taskType)
-      content          = result.content
-      resolvedProvider = result.resolvedProvider
-      resolvedModel    = result.resolvedModel
+    // EM-3.5 (Cognitive Platform Evolution Program, Milestone 3): previously
+    // a pipeline failure (isUnavailable(runtimeResult), thrown as an Error
+    // inside run{Structured,Text}Pipeline) propagated straight out of this
+    // method — the observe() call below was never reached, so IntelligenceOS
+    // never learned a generation failed at all, only ever seeing successes.
+    // This try/catch's only job is to fire that observation before
+    // re-throwing — it changes no error-handling behavior for this
+    // method's caller, which still sees the exact same thrown Error.
+    try {
+      if (isStructured) {
+        const result = await this.runStructuredPipeline(ctx, taskType)
+        // content is the raw LLM text — executeArtifactPipeline will compile+govern it
+        content           = result.rawText
+        governanceScore   = result.governanceScore
+        wasRepaired       = result.wasRepaired
+        resolvedProvider  = result.resolvedProvider
+        resolvedModel     = result.resolvedModel
+      } else {
+        const result = await this.runTextPipeline(ctx, taskType)
+        content          = result.content
+        resolvedProvider = result.resolvedProvider
+        resolvedModel    = result.resolvedModel
+      }
+    } catch (err) {
+      void this.cognitionClient.observe({
+        requestId:     request.requestId,
+        workspaceId:   request.workspaceId,
+        artifactType:  (request.taskType ?? 'unknown') as string,
+        topic:         observedTopic,
+        outputText:    '',
+        score:         0,
+        outcome:       'failure',
+        // Short, non-sensitive classification only — never the raw error
+        // message/stack, which may contain prompt/output content (see
+        // ObservationInput.failureReason's docblock).
+        failureReason: err instanceof Error && err.message.includes('AI runtime unavailable')
+          ? 'provider_unavailable'
+          : 'generation_error',
+        observedAt:    new Date().toISOString(),
+      })
+      throw err
     }
+
+    // EM-3.4: derive a simple routing-hint summary from whatever explicit
+    // preference the request carried, when one was set — the same
+    // provider/model preference already threaded into callWithMode()'s
+    // routingHint above, now also reported to IntelligenceOS instead of
+    // being discarded at the end of the request.
+    const routingHint = request.preferredProvider || request.preferredModel
+      ? [request.preferredProvider, request.preferredModel].filter(Boolean).join(':')
+      : undefined
 
     // Step 8: Observe (fire-and-forget).
     // observe() itself never throws (see HttpCognitionProvider) — it logs
@@ -110,10 +163,23 @@ export class CPLOrchestrator {
       requestId:    request.requestId,
       workspaceId:  request.workspaceId,
       artifactType: (request.taskType ?? 'unknown') as string,
+      topic:        observedTopic,
       outputText:   content,
       score:        governanceScore,
       wasRepaired:  wasRepaired,
       observedAt:   new Date().toISOString(),
+      // EM-3.4 (Cognitive Platform Evolution Program, Milestone 3):
+      // resolvedProvider/resolvedModel were already resolved above for
+      // Phase 5's RuntimeExecutionProfile — previously reported only to
+      // BrandOS's own local telemetry (recordProviderUsage/
+      // recordProviderOutcome, below), never to IntelligenceOS. tokenUsage
+      // is deliberately omitted, not defaulted to zeros — LLMResponse does
+      // not expose real token counts yet (see the F6 comment on
+      // recordProviderUsage's call below), and reporting a fabricated
+      // zero would be worse than reporting nothing.
+      providerId:   resolvedProvider,
+      modelId:      resolvedModel,
+      routingHint,
     })
 
     const durationMs = Date.now() - startMs

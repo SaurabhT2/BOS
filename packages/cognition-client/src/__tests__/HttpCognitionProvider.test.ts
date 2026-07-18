@@ -40,6 +40,13 @@ function makeContext(overrides: Partial<CognitionContext> = {}): CognitionContex
     identity: null,
     visualIdentity: null,
     provenance: { signalCount: 4, lastConsolidatedAt: null },
+    // EM-1.1 (Cognitive Platform Evolution Program) — now-required
+    // (nullable) fields; null is this factory's correct default, same as
+    // identity/visualIdentity above. Overridable via `overrides` like
+    // every other field here.
+    knowledge: null,
+    reasoning: null,
+    positioning: null,
     ...overrides,
   }
 }

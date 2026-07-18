@@ -11,16 +11,40 @@ Governed by, and must stay consistent with:
 
 ## Physical duplication (tracked, temporary)
 
-This package is currently duplicated byte-for-byte in both the `brandos`
-and `intelligence-os` repositories, because the two are separate repos with
-no shared package registry between them today. **Any change to `src/` must
-be applied identically to both copies in the same change set.**
+This package is currently duplicated in both the `brandos` and
+`intelligence-os` repositories, because the two are separate repos with no
+shared package registry between them today. **Any change to `src/` must be
+applied to both copies in the same change set, or explicitly allowlisted as
+a deliberate divergence — see the next section.**
 
 Follow-up (not yet scheduled): publish this package to a real registry
 (private npm registry or a git-dependency workspace protocol both repos can
 resolve) and delete one of the two copies in favor of a real dependency.
-Until then, a CI check comparing the two copies' file hashes is recommended
-so drift is caught immediately rather than discovered at integration time.
+That requires provisioning a private package registry, which is an
+infrastructure/ops decision outside a code change to this package.
+
+**Until then (Cognitive Platform Evolution Program, EM-1.1):** this
+divergence is no longer just "recommended" — `scripts/check-contract-parity.mjs`
+is a real, runnable symbol-level diff between this copy and the sibling
+repository's copy, and `.github/workflows/contract-parity.yml` wires it
+into CI (pending two things that need to be filled in by whoever owns the
+actual repositories: the real `<ORG>/...` repo slug, and a checkout token
+with read access to the sibling private repo — see the workflow file's
+comments). Run it locally with:
+
+```
+SIBLING_CONTRACT_SRC=/path/to/sibling/packages/cognition-contract/src \
+  pnpm --filter @platform/cognition-contract check:parity
+```
+
+It does not require the two copies to be byte-identical — see
+`contract-parity.allowlist.json` for the one currently-known, deliberate
+exception (Option B, below) — but it fails the build on anything else,
+which is exactly the gap that let this package's `CognitionContext` silently
+fall a full minor version behind IntelligenceOS's copy (missing the
+ADR-004 `knowledge`/`reasoning`/`positioning` sections) until the audit that
+produced the Cognitive Platform Evolution Program caught it by hand. That
+gap is fixed as of contract version 1.1.0 — this copy now matches.
 
 ## Resolved: raw-signal review UI (Option B)
 
@@ -36,33 +60,31 @@ be entirely IntelligenceOS's responsibility rather than a BrandOS product
 surface. BrandOS consumes only synthesized cognition through
 `resolveCognitionContext` / `observe` / `summarizeCognition` / `checkHealth`.
 
-## Known contract gaps (require an explicit decision — not resolved here)
+## Resolved: explicit brand-voice configuration ingestion (EM-1.2)
 
-This was discovered while migrating BrandOS's existing brand-intelligence
-package onto this contract. It is not a blocking technical constraint — it
-is a product-surface conflict between existing BrandOS behavior and the
-architecture documents' exclusion rules. Flagging per the
-"stop and explain, don't invent" instruction rather than deciding
-unilaterally:
+Previously, BrandOS forwarded a workspace's user-edited persona record
+(brand name, tone override, banned phrases, etc. — from `@brandos/auth`'s
+persona storage) nowhere outside BrandOS itself; `CognitionRequest`
+deliberately carries only `workspaceId`/`taskType`, and `observe()` reports
+generation outcomes, not settings, so neither fit. IntelligenceOS's own
+`ingestWorkspaceConfiguration` / `POST /v1/workspace-configuration`
+(ADR-003 §2.4) was already built and deployed to receive exactly this, but
+had zero BrandOS callers.
 
-1. **Explicit brand-voice configuration ingestion.** Before this
-   migration, BrandOS forwarded a workspace's user-edited persona record
-   (brand name, tone override, banned phrases, etc. — from
-   `@brandos/auth`'s persona storage) into brand-cognition resolution on
-   every request, and it was merged live with learned signals.
-   `CognitionRequest` (this package) intentionally carries only
-   `workspaceId` and `taskType` — no persona payload — per
-   `INTELLIGENCE_PLATFORM_IMPLEMENTATION.md` §4's exact signature, since
-   BrandOS is not supposed to hand IntelligenceOS raw configuration on the
-   synchronous read path. That leaves open how a workspace's explicit,
-   user-set brand-voice configuration reaches IntelligenceOS at all.
-   `observe()` doesn't fit (it reports generation outcomes, not settings).
-   Needs an explicit decision: an ingestion path outside the four
-   `CognitionProvider` operations (e.g. a one-time/on-change sync call),
-   or treating persona configuration as a `CognitionContext.voice` override
-   that IntelligenceOS itself is told about through some other channel.
+As of the Cognitive Platform Evolution Program's Milestone 1, BrandOS's
+`@brandos/cognition-client` package has a `WorkspaceConfigurationClient`
+that calls this endpoint whenever a workspace's persona configuration is
+created or updated (see `@brandos/auth`'s `dbService.ts`). `personas` is
+now a write-through cache: writes go to IntelligenceOS first, then to the
+local table. See this repository's `packages/auth/README.md` (ownership
+note near `updatePersona`) for the BrandOS-side detail.
 
-Until this is resolved, the BrandOS-side migration in this change set
-preserves the mechanical contract exactly as specified and leaves the gap
-visible rather than papering over it with a shadow parameter or an
-undocumented fifth method.
+## Open architecture question (not resolved by this program)
+
+1. **`review()` / `CognitionReviewDecision` — Option B.** BrandOS's copy of
+   `CognitionProvider` still intentionally has 4 operations, not
+   IntelligenceOS's 5 (see `CognitionProvider.ts`'s Option B docblock and
+   `contract-parity.allowlist.json`). Whether BrandOS ever needs a review
+   surface at all — a narrow, real one, or none — is a product/architecture
+   decision the Cognitive Platform Evolution Program's EM-4.5 flags but
+   does not make unilaterally.

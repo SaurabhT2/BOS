@@ -38,8 +38,9 @@ import {
 export async function ingestWorkspaceKnowledgeAsset(
   asset: KnowledgeAssetIngestInput,
   rawContent?: string,
+  existingAssetId?: string,
 ): Promise<{ assetId: string } | null> {
   const client = getGlobalKnowledgeIngestClient()
   if (!client) return null
-  return client.ingestKnowledgeAsset(asset, rawContent)
+  return client.ingestKnowledgeAsset(asset, rawContent, existingAssetId)
 }

@@ -12,6 +12,7 @@ import { PersonaContributor }   from '../../src/contract-assembler/contributors/
 import { IntentContributor }    from '../../src/contract-assembler/contributors/IntentContributor';
 import { ArtifactContributor }  from '../../src/contract-assembler/contributors/ArtifactContributor';
 import { RuntimeContributor }   from '../../src/contract-assembler/contributors/RuntimeContributor';
+import { KnowledgeContributor } from '../../src/contract-assembler/contributors/KnowledgeContributor';
 import { MINIMAL_CONTRIBUTOR_CONTEXT, CONTRIBUTOR_CONTEXT_WITH_BRAND } from '../fixtures';
 
 // ─── Interface conformance ────────────────────────────────────────────────────
@@ -23,6 +24,7 @@ describe('Contributor interface conformance', () => {
     { name: 'IntentContributor',   instance: new IntentContributor() },
     { name: 'ArtifactContributor', instance: new ArtifactContributor() },
     { name: 'RuntimeContributor',  instance: new RuntimeContributor() },
+    { name: 'KnowledgeContributor', instance: new KnowledgeContributor() },
   ];
 
   for (const { name, instance } of contributors) {
@@ -59,6 +61,71 @@ describe('IdentityContributor', () => {
     if (result !== null) {
       expect(typeof result.confidence).toBe('number');
     }
+  });
+});
+
+// ─── KnowledgeContributor (Cognitive Platform Evolution Program, EM-4.1) ──────
+
+describe('KnowledgeContributor', () => {
+  const contributor = new KnowledgeContributor();
+
+  it('returns null when cognitionContext has no knowledge/reasoning/positioning', async () => {
+    const result = await contributor.contribute(MINIMAL_CONTRIBUTOR_CONTEXT);
+    expect(result).toBeNull();
+  });
+
+  it('returns a combined contribution when all three sections are populated', async () => {
+    const result = await contributor.contribute(CONTRIBUTOR_CONTEXT_WITH_BRAND);
+    expect(result).not.toBeNull();
+    expect(result?.themes?.[0]?.name).toBe('founder-led growth');
+    expect(result?.conclusions?.[0]).toContain('specific numbers');
+    expect(result?.positioningStatements?.[0]).toContain('founder-friendly');
+    expect(result?.hasConflict).toBe(false);
+  });
+
+  it('reports the lowest of the three sections\' confidence', async () => {
+    // Fixture has knowledge=high, reasoning=medium, positioning=high —
+    // medium (60) should win as the lowest.
+    const result = await contributor.contribute(CONTRIBUTOR_CONTEXT_WITH_BRAND);
+    expect(result?.confidence).toBe(60);
+  });
+
+  it('returns null when only cognitionContext.identity is populated (no knowledge/reasoning/positioning)', async () => {
+    const contextWithoutKnowledge = {
+      ...CONTRIBUTOR_CONTEXT_WITH_BRAND,
+      cognitionContext: {
+        ...CONTRIBUTOR_CONTEXT_WITH_BRAND.cognitionContext!,
+        knowledge: null,
+        reasoning: null,
+        positioning: null,
+      },
+    };
+    const result = await contributor.contribute(contextWithoutKnowledge);
+    expect(result).toBeNull();
+  });
+
+  it('surfaces hasConflict when any section reports it', async () => {
+    const contextWithConflict = {
+      ...CONTRIBUTOR_CONTEXT_WITH_BRAND,
+      cognitionContext: {
+        ...CONTRIBUTOR_CONTEXT_WITH_BRAND.cognitionContext!,
+        reasoning: {
+          conclusions: [{ statement: 'Contested conclusion' }],
+          confidence: 'low' as const,
+          hasConflict: true,
+        },
+      },
+    };
+    const result = await contributor.contribute(contextWithConflict);
+    expect(result?.hasConflict).toBe(true);
+  });
+
+  it('respects applyBrandMemory === false, same as IdentityContributor', async () => {
+    const result = await contributor.contribute({
+      ...CONTRIBUTOR_CONTEXT_WITH_BRAND,
+      applyBrandMemory: false,
+    });
+    expect(result).toBeNull();
   });
 });
 

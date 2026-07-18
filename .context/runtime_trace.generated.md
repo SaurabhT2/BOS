@@ -1,6 +1,6 @@
 # BrandOS Runtime Trace (Generated)
 
-> **Generated:** 2026-07-09 09:59:53 UTC
+> **Generated:** 2026-07-13 16:08:46 UTC
 > **Authority:** read live from source at generation time — see the citation under each section header.
 > **Scope:** this documents *actual control flow as found in source*, including any disagreement with
 > `.context/runtime_model.generated.md` (which documents *intended* architecture). Where the two differ,

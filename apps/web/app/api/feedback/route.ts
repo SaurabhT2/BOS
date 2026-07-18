@@ -1,6 +1,7 @@
 // app/api/feedback/route.ts - Fixed: uses requireUser, adds input validation, adds runtime
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabase-server'
+import { recordArtifactFeedback } from '@brandos/control-plane-layer'
 
 export const runtime = 'nodejs'
 
@@ -45,6 +46,34 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // EM-3.2 (Cognitive Platform Evolution Program, Milestone 3 — Feedback
+    // Capture Forwarding): this used to write only to the local `feedback`
+    // table — a direct, high-value satisfaction/quality signal captured
+    // and never forwarded anywhere (see the audit's §3.2 table). Forward
+    // it now, in addition to the local write (not instead of — the local
+    // table may still serve BrandOS-side UI/analytics needs).
+    //
+    // This local `signal` vocabulary (useful/generic/off_tone/excellent/
+    // needs_work) is a satisfaction rating, not an accept/edit/reject
+    // ACTION — it doesn't map cleanly onto FeedbackEventType's
+    // accepted/edited/rejected/deployed vocabulary (which describes what
+    // happened to the artifact, not how the user rated it). Mapping it to
+    // 'explicit_feedback' with the rating/note in explicitReason preserves
+    // its actual meaning instead of forcing a false equivalence (e.g.
+    // 'excellent' is not the same claim as 'accepted').
+    //
+    // artifactType: this route only has campaignId to work with — the
+    // campaigns table has no artifact-type column to look up a more
+    // specific value, so 'campaign' is the most accurate value available
+    // at this call site, not a placeholder.
+    void recordArtifactFeedback({
+      userId: user.id,
+      artifactId: campaignId,
+      artifactType: 'campaign',
+      eventType: 'explicit_feedback',
+      explicitReason: note ? `${signal}: ${note}` : signal,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {

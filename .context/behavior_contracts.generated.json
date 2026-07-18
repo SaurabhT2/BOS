@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-07-09 09:59:52 UTC",
+    "generated": "2026-07-13 16:08:46 UTC",
     "generator": "scripts/generate-behavior-contracts.mjs",
     "purpose": "What each major cross-package interaction does — inputs, outputs, failure modes, fallbacks — so an agent can reason about behavior without reading the implementations.",
     "provenance": "Hand-curated from direct source reading (no existing authority records failure-mode/fallback behavior as structured data); each entry carries a live-checked `verification` field so drift in the underlying code is visible on the next regeneration rather than silently going stale.",

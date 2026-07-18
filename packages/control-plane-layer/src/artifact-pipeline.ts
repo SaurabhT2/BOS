@@ -633,14 +633,43 @@ function recordBrandMemoryAfterPipeline(
   realGovernanceScore: number,
   wasRepaired: boolean,
 ): void {
+  // Cognitive Platform Evolution Program follow-up (found via a live
+  // end-to-end run's server logs): input.cpResponse already carries
+  // resolvedProvider/resolvedModel (Phase 5 — Runtime Consolidation,
+  // populated from callWithMode()'s LLMResponse) — this call site just
+  // never read them. This is the observation whose score actually
+  // survives Brand Memory's Gate 1 threshold and reaches the Learning
+  // Pipeline (the orchestrator's own observe() call always fires with
+  // score=0 and is dropped by that same gate — see this function's
+  // header comment above), so this is the metadata that matters.
+  //
+  // `topic` follow-up: a separately-proposed fix added `topic` to
+  // orchestrator.ts's two observe() calls (Defect 3 in the accompanying
+  // RCA) to close the gap where SignalExtractor.extractFromObservation()
+  // never emits its topic-gated `expertise_domains` signal. That fix is
+  // real but incomplete on its own — SignalExtractor's very first line is
+  // `if (!isMeaningfulScore(input.score)) return [];`, BEFORE the topic
+  // branch is ever reached, and orchestrator.ts's own observe() calls are
+  // exactly the score=0 ones that gate discards (per that fix's own
+  // header comment, and confirmed here). `topic` has to reach THIS call
+  // site — the one with the real, surviving score — for the fix to
+  // actually produce a second signal. ArtifactPipelineInput already
+  // carries the resolved topic directly (`topic: string`, "the
+  // user-facing topic / prompt for this generation" — see this file's
+  // interface, and TOPIC-DRIFT-FIX-004's originalTopic derivation above),
+  // so no new derivation is needed here, just reading it.
   void recordBrandMemoryObservation({
     requestId:    input.requestId,
     workspaceId:  input.workspaceId,
     artifactType: taskType,
     artifactText: rawLLMText,
     artifactScore: realGovernanceScore,
+    topic:        input.topic?.slice(0, 120),
     wasRepaired,
     observedAt:   new Date().toISOString(),
+    providerId:   input.cpResponse?.resolvedProvider,
+    modelId:      input.cpResponse?.resolvedModel,
+    outcome:      'success',
   }).catch((err: unknown) => {
     // Non-critical — never surface as unhandled rejection
     console.warn(

@@ -38,6 +38,43 @@ export {
   _resetGlobalKnowledgeIngestClientForTests,
 } from './global-knowledge-client'
 
+// Cognitive Platform Evolution Program, Milestone 1 (Cognitive Ownership),
+// EM-1.2 — deliberately separate from both CognitionProvider and
+// KnowledgeIngestClient; see WorkspaceConfigurationClient.ts's header.
+export { WorkspaceConfigurationClient } from './WorkspaceConfigurationClient'
+export type {
+  WorkspaceConfigurationClientConfig,
+  WorkspaceConfigurationSyncInput,
+} from './WorkspaceConfigurationClient'
+export {
+  initWorkspaceConfigurationClient,
+  getGlobalWorkspaceConfigurationClient,
+  _resetGlobalWorkspaceConfigurationClientForTests,
+} from './global-workspace-configuration-client'
+
+// Cognitive Platform Evolution Program, Milestone 3 (Experience Loop),
+// EM-3.1 / EM-3.3.
+export { FeedbackEventClient } from './FeedbackEventClient'
+export type {
+  FeedbackEventClientConfig,
+  FeedbackEventInput,
+  FeedbackEventType,
+  EditDiffInput,
+} from './FeedbackEventClient'
+export {
+  initFeedbackEventClient,
+  getGlobalFeedbackEventClient,
+  _resetGlobalFeedbackEventClientForTests,
+} from './global-feedback-event-client'
+
+export { CorrectionClient } from './CorrectionClient'
+export type { CorrectionClientConfig, CorrectionInput } from './CorrectionClient'
+export {
+  initCorrectionClient,
+  getGlobalCorrectionClient,
+  _resetGlobalCorrectionClientForTests,
+} from './global-correction-client'
+
 // Re-exported for convenience so consumers migrating off
 // @brandos/brand-intelligence don't need a second import for types they
 // already had a name for (IBrandCognitionContext -> CognitionContext, etc).

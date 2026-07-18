@@ -1,0 +1,55 @@
+name: Contract Parity (BrandOS <-> IntelligenceOS)
+
+# Cognitive Platform Evolution Program — EM-1.1 (Contract Publishing &
+# Parity Gate). Fails the build if @platform/cognition-contract has
+# drifted between this repository and IntelligenceOS in an undocumented
+# way. See packages/cognition-contract/scripts/check-contract-parity.mjs
+# for what counts as "documented" (contract-parity.allowlist.json).
+#
+# NOTE: <ORG>/intelligence-os below is a placeholder — this workflow could
+# not be wired to a real repository slug from a static code audit;
+# substitute the actual org/repo before enabling. This also assumes a
+# checkout token with read access to the sibling private repository (e.g.
+# a fine-grained PAT stored as a secret), which is an infrastructure/
+# credentials step outside what this program's code changes can provision.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/cognition-contract/**'
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout BrandOS
+        uses: actions/checkout@v4
+        with:
+          path: brandos
+
+      - name: Checkout IntelligenceOS
+        uses: actions/checkout@v4
+        with:
+          repository: <ORG>/intelligence-os
+          path: intelligence-os
+          token: ${{ secrets.INTELLIGENCE_OS_REPO_READ_TOKEN }}
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install BrandOS's cognition-contract deps
+        working-directory: brandos/packages/cognition-contract
+        run: pnpm install --frozen-lockfile
+
+      - name: Run parity check
+        working-directory: brandos/packages/cognition-contract
+        env:
+          SIBLING_CONTRACT_SRC: ${{ github.workspace }}/intelligence-os/packages/cognition-contract/src
+        run: node scripts/check-contract-parity.mjs
