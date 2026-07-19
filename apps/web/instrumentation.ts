@@ -33,9 +33,12 @@
  * so getGlobalCognitionClient() (called unconditionally by every
  * CPLOrchestrator construction) never throws.
  */
+import * as Sentry from '@sentry/nextjs'
+
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    await import('./sentry.server.config')
 
     // ── 0. Prime the LLMRouter singleton ──────────────────────────────────────
     // Forces AIRuntimeAdapter construction and sets globalThis.__brandos_runtime_adapter
@@ -299,6 +302,9 @@ export async function register() {
       console.warn('[instrumentation] Export adapter registry slots will remain empty; /api/artifact/export route is unaffected')
     }
   }
+  if (process.env.NEXT_RUNTIME === 'edge') {
+    await import('./sentry.edge.config');
+  }
 }
-
+export const onRequestError = Sentry.captureRequestError
 
