@@ -1,3 +1,6 @@
+
+const { withSentryConfig } = require("@sentry/nextjs")
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // ── Transpile all internal @brandos/* workspace packages ──────────────────
@@ -63,6 +66,11 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = withSentryConfig(nextConfig, {
+  org: "domainos",
+  project: "brandos",
 
+  silent: !process.env.CI,
 
+  widenClientFileUpload: true,
+})
