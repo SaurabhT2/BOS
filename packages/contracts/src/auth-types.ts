@@ -586,15 +586,32 @@ export type NewWorkspaceSettings = Pick<WorkspaceSettingsRow, 'workspace_id'> &
 /**
  * Lifecycle status for a brand asset.
  *
- * 'uploading'  → file transfer in progress (transient — set by the upload
- *                handler before the storage write completes)
- * 'processing' → uploaded, awaiting/undergoing VLM analysis
- * 'indexed'    → VLM analysis complete (or skipped); asset is usable
- * 'failed'     → VLM analysis failed; eligible for retry via reindex
- * 'archived'   → soft-deleted (AD-4) — hidden from standard users, restorable
- *                by a platform admin only
+ * 'uploading'         → file transfer in progress (transient — set by the
+ *                       upload handler before the storage write completes)
+ * 'processing'        → uploaded, awaiting/undergoing VLM analysis (images)
+ *                       or awaiting IntelligenceOS knowledge extraction
+ *                       (documents, briefly, before the extraction attempt
+ *                       resolves)
+ * 'indexing_pending'  → G-25 (Architecture Verification Report, P1). A
+ *                       document's IntelligenceOS knowledge-extraction
+ *                       attempt did not complete successfully (error or
+ *                       timeout). Distinct from 'indexed' specifically so
+ *                       the user-visible status never claims IntelligenceOS-
+ *                       side completion that did not actually happen —
+ *                       previously this case was silently reported as
+ *                       'indexed'. Re-running POST /api/assets/:id/analyze
+ *                       retries the ingestion attempt.
+ * 'indexed'           → for images: VLM analysis complete (or skipped);
+ *                       for documents: the IntelligenceOS knowledge-
+ *                       extraction attempt genuinely completed successfully
+ *                       (or IntelligenceOS is not configured for this
+ *                       deployment, in which case there is nothing to wait
+ *                       for). Asset is usable either way.
+ * 'failed'            → VLM analysis failed; eligible for retry via reindex
+ * 'archived'          → soft-deleted (AD-4) — hidden from standard users,
+ *                       restorable by a platform admin only
  */
-export type BrandAssetStatus = 'uploading' | 'processing' | 'indexed' | 'failed' | 'archived';
+export type BrandAssetStatus = 'uploading' | 'processing' | 'indexing_pending' | 'indexed' | 'failed' | 'archived';
 
 /**
  * public.brand_assets table row.

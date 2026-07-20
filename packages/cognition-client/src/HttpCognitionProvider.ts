@@ -24,6 +24,7 @@ import {
   type ObservationInput,
 } from '@platform/cognition-contract'
 import { Logger, withRetry } from '@brandos/shared-utils'
+import { FIRE_AND_FORGET_RETRY_OPTIONS } from './retryPolicy'
 
 const logger = new Logger('info')
 
@@ -33,7 +34,20 @@ export interface HttpCognitionProviderConfig {
   /** Service-to-service API key/token for authenticating to IntelligenceOS. */
   readonly apiKey: string
   /** Request timeout in ms. Default 2500 — the resolve path is synchronous
-   *  in a user-facing generation request, so this must stay tight. */
+   *  in a user-facing generation request, so this must stay tight.
+   *
+   *  G-16 (Architecture Verification Report, P2): this default is not
+   *  changed by that finding. The finding's own recommended approach is to
+   *  measure real resolveCognitionContext() latency in staging/production
+   *  first and set a value informed by that data — an environment this
+   *  session has no access to. Raising the default without real numbers
+   *  would be exactly the "arbitrary increase" the finding explicitly
+   *  warns against, and this value is already a first-class override
+   *  (`timeoutMs` on this config) for any deployment that has since
+   *  gathered that data. See HttpCognitionProvider.test.ts's dedicated
+   *  timeout/degrade test, added as part of this finding, for coverage
+   *  that is valid regardless of what the eventual number should be.
+   */
   readonly timeoutMs?: number
   /** Max retry attempts for resolveCognitionContext only. observe() is not
    *  retried by this client — callers that need at-least-once delivery
@@ -67,7 +81,14 @@ export class HttpCognitionProvider implements CognitionProvider {
 
   async observe(input: ObservationInput): Promise<void> {
     try {
-      await this._post<void>('/v1/cognition/observe', input)
+      // G-14 (Architecture Verification Report, P1) — was the single
+      // named example of a currently-unretried call in this finding.
+      // Still fully fire-and-forget from the caller's point of view
+      // (void-called, never awaited at the CPL call site) — retrying
+      // here only improves the odds this observation actually reaches
+      // IntelligenceOS before giving up, it does not change when/whether
+      // the caller waits for it.
+      await withRetry(() => this._post<void>('/v1/cognition/observe', input), FIRE_AND_FORGET_RETRY_OPTIONS)
     } catch (err) {
       // Fire-and-forget by contract: observation failures must never
       // propagate to the generation path that triggered them.

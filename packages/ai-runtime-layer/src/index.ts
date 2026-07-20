@@ -92,7 +92,7 @@ export { buildOutputBadge } from './generationModes'
 // VLM Service
 // Vision language model helpers for brand asset analysis.
 // ─────────────────────────────────────────────────────────────
-export { analyzeImageWithVLM, analyzeMultipleImages, checkBrandCompliance } from './vlmService'
+export { analyzeImageWithVLM, analyzeMultipleImages, checkBrandCompliance, extractTextFromImageWithVLM } from './vlmService'
 export type { VLMAnalysisResult, VLMAnalysisRequest } from './vlmService'
 
 // ─────────────────────────────────────────────────────────────

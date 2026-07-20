@@ -16,6 +16,9 @@
  * shared package import.
  */
 
+import { withRetry } from '@brandos/shared-utils'
+import { FIRE_AND_FORGET_RETRY_OPTIONS } from './retryPolicy'
+
 const DEFAULT_TIMEOUT_MS = 5000
 
 export interface FeedbackEventClientConfig {
@@ -55,8 +58,17 @@ export class FeedbackEventClient {
    * every other client in this package — a feedback-recording failure
    * must never fail whatever user-facing action (accept/edit/reject/
    * deploy/explicit feedback submission) triggered it.
+   *
+   * G-14 (Architecture Verification Report, P1) — now retries transient
+   * failures (see retryPolicy.ts) before giving up. Each attempt gets its
+   * own AbortController/timeout — a retry after a timed-out attempt must
+   * not inherit an already-aborted signal.
    */
   async record(event: FeedbackEventInput): Promise<void> {
+    await withRetry(() => this._attempt(event), FIRE_AND_FORGET_RETRY_OPTIONS)
+  }
+
+  private async _attempt(event: FeedbackEventInput): Promise<void> {
     const controller = new AbortController()
     const timeout = setTimeout(
       () => controller.abort(),

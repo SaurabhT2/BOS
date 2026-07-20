@@ -23,6 +23,9 @@
  * apps/web must not talk to IntelligenceOS directly.
  */
 
+import { withRetry } from '@brandos/shared-utils'
+import { KNOWLEDGE_INGEST_RETRY_OPTIONS } from './retryPolicy'
+
 /**
  * Found via a live end-to-end run's server logs (Cognitive Platform
  * Evolution Program follow-up): `[analyze] knowledge ingestion failed
@@ -41,7 +44,6 @@
  * work lands and this call goes back to being a fast, thin write.
  */
 const DEFAULT_TIMEOUT_MS = 30000
-
 export interface KnowledgeIngestClientConfig {
   /** Base URL of the IntelligenceOS API — same value used for cognition. */
   readonly baseUrl: string
@@ -88,11 +90,35 @@ export class KnowledgeIngestClient {
    *   from a prior successful call for the same `brand_assets` row (see
    *   `brand_assets.intelligence_asset_id`), and omit it only for the
    *   first ingest of a given asset.
+   *
+   *   G-14 (Architecture Verification Report, P1) — retries are only
+   *   applied when `existingAssetId` is supplied. IntelligenceOS's
+   *   `ingestKnowledgeAsset()` upserts by id in that case, making a retry
+   *   safe even if an earlier attempt actually succeeded server-side and
+   *   only the response was lost. A FIRST ingest (no `existingAssetId`)
+   *   has no such guarantee — retrying an ambiguous failure (e.g. a
+   *   timeout where the request may have already succeeded) risks
+   *   creating a duplicate KnowledgeAsset row, which is worse than the
+   *   status quo of a single clean failure. A durable fix (a
+   *   request-level idempotency key IntelligenceOS could de-dupe on) is
+   *   "durable delivery guarantee" territory — explicitly out of scope
+   *   for this finding's narrow slice (see retryPolicy.ts's header).
    */
   async ingestKnowledgeAsset(
     asset: KnowledgeAssetIngestInput,
     rawContent?: string,
     existingAssetId?: string,
+  ): Promise<{ assetId: string }> {
+    const attempt = () => this._attempt(asset, rawContent, existingAssetId)
+    return existingAssetId
+      ? withRetry(attempt, KNOWLEDGE_INGEST_RETRY_OPTIONS)
+      : attempt()
+  }
+
+  private async _attempt(
+    asset: KnowledgeAssetIngestInput,
+    rawContent: string | undefined,
+    existingAssetId: string | undefined,
   ): Promise<{ assetId: string }> {
     const controller = new AbortController()
     const timeout = setTimeout(

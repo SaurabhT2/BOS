@@ -12,10 +12,12 @@
  *   governance.validate.carousel   — carousel semantic validation
  *   governance.validate.deck       — deck semantic validation
  *   governance.validate.report     — report semantic validation
+ *   governance.validate.newsletter — newsletter semantic validation
  *   governance.score.text          — text quality scoring (all types)
  *   governance.repair.carousel     — carousel LLM-assisted repair
  *   governance.repair.deck         — deck LLM-assisted repair
  *   governance.repair.report       — report LLM-assisted repair
+ *   governance.repair.newsletter   — newsletter LLM-assisted repair
  *
  * DESIGN:
  *   - Module-level singleton (not React context)
@@ -160,7 +162,8 @@ export const GovernancePluginRegistry = new GovernancePluginRegistryImpl()
  *   To add governance for a new artifact type, call
  *   GovernancePluginRegistry.registerValidator() / registerRepair() / registerScorer()
  *   from the package that owns that artifact type's governance.
- *   This function handles only the built-in carousel, deck, and report types.
+ *   This function handles only the built-in carousel, deck, report, and
+ *   newsletter types.
  */
 
 let bootstrapped = false
@@ -180,6 +183,9 @@ export async function bootstrapGovernancePlugins(): Promise<void> {
   const {
     validateReportArtifact, runReportSemanticGovernance,
   } = await import('./report/index.js')
+  const {
+    validateNewsletterArtifact, runNewsletterSemanticGovernance,
+  } = await import('./newsletter/index.js')
 
   // ── Carousel ──────────────────────────────────────────────────────────────
   GovernancePluginRegistry.registerValidator({
@@ -255,6 +261,37 @@ export async function bootstrapGovernancePlugins(): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async repair(input, topic, callLLM, requestId) {
         return runReportSemanticGovernance(input as any, topic, callLLM, requestId)
+      },
+    },
+  })
+
+  // ── Newsletter (G-23, Architecture Verification Report P1) ────────────────
+  // The validator/scorer/repair implementations already existed in
+  // packages/governance-layer/src/newsletter/ but were never registered —
+  // newsletter generations previously received zero structural/semantic
+  // validation or repair at all. Registered here mirroring the
+  // carousel/deck/report pattern exactly; no new validator logic required.
+  GovernancePluginRegistry.registerValidator({
+    artifactType: 'newsletter',
+    capabilityKey: 'governance.validate.newsletter',
+    validator: {
+      async validate(input, requestId) {
+        const outcome = validateNewsletterArtifact(input as Parameters<typeof validateNewsletterArtifact>[0], requestId)
+        return {
+          passed: outcome.valid,
+          violations: outcome.valid ? [] : [outcome.reason],
+        }
+      },
+    },
+  })
+
+  GovernancePluginRegistry.registerRepair({
+    artifactType: 'newsletter',
+    capabilityKey: 'governance.repair.newsletter',
+    repair: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async repair(input, topic, callLLM, requestId) {
+        return runNewsletterSemanticGovernance(input as any, topic, callLLM, requestId)
       },
     },
   })

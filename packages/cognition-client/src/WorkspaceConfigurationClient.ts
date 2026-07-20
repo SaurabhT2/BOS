@@ -77,6 +77,18 @@ export class WorkspaceConfigurationClient {
    * user-facing write on this call's latency may still choose to run it
    * concurrently and log-on-failure instead; that is a caller-level
    * decision, not this client's.
+   *
+   * G-14 (Architecture Verification Report, P1) — deliberately NOT given
+   * automatic retries as part of that finding's retry-wrapper extension,
+   * unlike every other client in this package. This call is synchronous
+   * and user-facing by design (see above) — adding exponential-backoff
+   * retries here would directly increase the perceived latency of a
+   * persona save when IntelligenceOS is slow/degraded, which cuts against
+   * G-14's own stated risk constraint ("retries must remain non-blocking
+   * to preserve the fail-open posture") more than it helps, since this
+   * path already blocks. A caller that wants retry behavior here can
+   * still wrap this call with `withRetry` itself — that's the "caller-
+   * level decision" the paragraph above already anticipates.
    */
   async sync(input: WorkspaceConfigurationSyncInput): Promise<{ assetId: string }> {
     const controller = new AbortController()

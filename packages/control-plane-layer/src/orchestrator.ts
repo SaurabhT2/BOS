@@ -146,41 +146,88 @@ export class CPLOrchestrator {
       throw err
     }
 
-    // EM-3.4: derive a simple routing-hint summary from whatever explicit
-    // preference the request carried, when one was set — the same
-    // provider/model preference already threaded into callWithMode()'s
-    // routingHint above, now also reported to IntelligenceOS instead of
-    // being discarded at the end of the request.
-    const routingHint = request.preferredProvider || request.preferredModel
-      ? [request.preferredProvider, request.preferredModel].filter(Boolean).join(':')
-      : undefined
+    // G-2 (Architecture Verification Report, P1) — Option A (consolidate),
+    // chosen over Option B (mark preliminary calls with a new
+    // `preliminary: true` contract field) because it's strictly simpler,
+    // requires no cross-repo contract change, and fully satisfies the
+    // finding's acceptance criteria on its own: for carousel/deck/report/
+    // newsletter, `recordBrandMemoryAfterPipeline()` (artifact-pipeline.ts)
+    // already fires the one observe() call that matters — with the REAL,
+    // post-governance-repair score — after executeArtifactPipeline() runs
+    // (a separate step, downstream of this method returning). This
+    // method's own observe() call for those 4 types was always fired with
+    // `governanceScore` still at its placeholder value of 0 (see
+    // FIX-SCORE-001 above — the real score isn't computed until
+    // executeArtifactPipeline() runs), so `isMeaningfulScore(score) =
+    // score > 0` always dropped it anyway. Removing it is a pure
+    // simplification: one fewer redundant, always-dropped HTTP call per
+    // generation of these 4 types, no behavior change to Signal extraction.
+    //
+    // NOT removed for chat/post: there is no
+    // recordBrandMemoryAfterPipeline()-equivalent second call for those
+    // artifact types anywhere in this codebase (confirmed — that function
+    // is only called from the 4 pipeline functions covering the types
+    // above). Removing this call for chat/post too would leave them with
+    // literally zero observation calls — a net-new gap this finding did
+    // not ask for. Their score is still 0 today regardless (a separate,
+    // pre-existing gap — chat/post pipelines never compute a governance
+    // score at all — out of scope for this finding), so this call is
+    // still dropped by the same gate either way; kept so IntelligenceOS's
+    // own request-level telemetry/audit trail isn't silently reduced for
+    // artifact types this finding was never scoped to touch.
+    //
+    // Deliberately NOT reusing `isStructured` (line 76) for this check —
+    // that flag governs which RAW-GENERATION code path runs
+    // (runStructuredPipeline vs runTextPipeline) and excludes newsletter,
+    // which generates through the text-style path even though its
+    // GOVERNANCE afterward is structured (it does get a
+    // recordBrandMemoryAfterPipeline() call, from runNewsletterPipeline()).
+    // `hasFollowUpBrandMemoryObservation` below matches
+    // recordBrandMemoryAfterPipeline()'s actual 4-type coverage, confirmed
+    // directly in artifact-pipeline.ts — that's the set this consolidation
+    // needs to match, not isStructured's 3-type set. Changing
+    // isStructured itself is out of scope: it drives unrelated
+    // raw-generation logic this finding never asked to touch.
+    const hasFollowUpBrandMemoryObservation =
+      taskType === 'carousel' || taskType === 'deck' || taskType === 'report' || taskType === 'newsletter'
 
-    // Step 8: Observe (fire-and-forget).
-    // observe() itself never throws (see HttpCognitionProvider) — it logs
-    // and swallows failures internally, matching the contract's
-    // fire-and-forget guarantee.
-    void this.cognitionClient.observe({
-      requestId:    request.requestId,
-      workspaceId:  request.workspaceId,
-      artifactType: (request.taskType ?? 'unknown') as string,
-      topic:        observedTopic,
-      outputText:   content,
-      score:        governanceScore,
-      wasRepaired:  wasRepaired,
-      observedAt:   new Date().toISOString(),
-      // EM-3.4 (Cognitive Platform Evolution Program, Milestone 3):
-      // resolvedProvider/resolvedModel were already resolved above for
-      // Phase 5's RuntimeExecutionProfile — previously reported only to
-      // BrandOS's own local telemetry (recordProviderUsage/
-      // recordProviderOutcome, below), never to IntelligenceOS. tokenUsage
-      // is deliberately omitted, not defaulted to zeros — LLMResponse does
-      // not expose real token counts yet (see the F6 comment on
-      // recordProviderUsage's call below), and reporting a fabricated
-      // zero would be worse than reporting nothing.
-      providerId:   resolvedProvider,
-      modelId:      resolvedModel,
-      routingHint,
-    })
+    if (!hasFollowUpBrandMemoryObservation) {
+      // EM-3.4: derive a simple routing-hint summary from whatever explicit
+      // preference the request carried, when one was set — the same
+      // provider/model preference already threaded into callWithMode()'s
+      // routingHint above, now also reported to IntelligenceOS instead of
+      // being discarded at the end of the request.
+      const routingHint = request.preferredProvider || request.preferredModel
+        ? [request.preferredProvider, request.preferredModel].filter(Boolean).join(':')
+        : undefined
+
+      // Step 8: Observe (fire-and-forget).
+      // observe() itself never throws (see HttpCognitionProvider) — it logs
+      // and swallows failures internally, matching the contract's
+      // fire-and-forget guarantee.
+      void this.cognitionClient.observe({
+        requestId:    request.requestId,
+        workspaceId:  request.workspaceId,
+        artifactType: (request.taskType ?? 'unknown') as string,
+        topic:        observedTopic,
+        outputText:   content,
+        score:        governanceScore,
+        wasRepaired:  wasRepaired,
+        observedAt:   new Date().toISOString(),
+        // EM-3.4 (Cognitive Platform Evolution Program, Milestone 3):
+        // resolvedProvider/resolvedModel were already resolved above for
+        // Phase 5's RuntimeExecutionProfile — previously reported only to
+        // BrandOS's own local telemetry (recordProviderUsage/
+        // recordProviderOutcome, below), never to IntelligenceOS. tokenUsage
+        // is deliberately omitted, not defaulted to zeros — LLMResponse does
+        // not expose real token counts yet (see the F6 comment on
+        // recordProviderUsage's call below), and reporting a fabricated
+        // zero would be worse than reporting nothing.
+        providerId:   resolvedProvider,
+        modelId:      resolvedModel,
+        routingHint,
+      })
+    }
 
     const durationMs = Date.now() - startMs
     logger.info(
@@ -256,11 +303,28 @@ export class CPLOrchestrator {
       applyBrandMemory: ctx.applyBrandMemory,
     })
 
+    // G-18 (Architecture Verification Report, P2) — previously one combined
+    // `hasIdentity=... confidence=...` log line, which reads as if both
+    // values share a common source and should always agree. They don't:
+    // on IntelligenceOS's side (ContextBuilder.ts), `identity` comes from
+    // identity synthesis/configuration (deriveIdentityContribution() +
+    // applyIdentityConfiguration() — can be non-null even with few
+    // Learnings, if the workspace has explicit identity configuration),
+    // while `confidence` comes from Learning corroboration count alone
+    // (deriveConfidence()). These can legitimately diverge — e.g.
+    // hasIdentity=true with confidence still "degraded" — and did not
+    // deserve to be misread as one contradictory signal. Two log lines,
+    // sharing requestId so they're still correlatable.
     logger.info(
-      `[CPLOrchestrator] cognition injected ` +
+      `[CPLOrchestrator] identity injected ` +
       `hasIdentity=${ctx.cognitionContext.identity !== null} ` +
+      `requestId=${ctx.requestId}`
+    )
+    logger.info(
+      `[CPLOrchestrator] confidence injected ` +
       `confidence=${ctx.cognitionContext.confidence} ` +
-      `audienceType=${ctx.cognitionContext.voice.audienceType}`
+      `audienceType=${ctx.cognitionContext.voice.audienceType} ` +
+      `requestId=${ctx.requestId}`
     )
 
     // 2. Compile prompt

@@ -1,6 +1,3 @@
-
-const { withSentryConfig } = require("@sentry/nextjs")
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // ── Transpile all internal @brandos/* workspace packages ──────────────────
@@ -52,7 +49,18 @@ const nextConfig = {
   // deps) as a genuine Node.js require() at runtime rather than inlining it
   // into the webpack bundle. The API routes that use pptxgenjs load it via
   // dynamic import() — see lib/artifact-export-pptx.ts for the rationale.
-  serverExternalPackages: ['pptxgenjs'],
+  //
+  // G-19 (Architecture Verification Report, P2): @napi-rs/canvas ships a
+  // native .node binary (js-binding.js loads it) — Turbopack/webpack cannot
+  // bundle native addons into an ESM chunk ("non-ecmascript placeable
+  // asset"), the same fundamental issue as pptxgenjs above, just for a
+  // different reason (native binary vs. Node-builtin shimming). pdfjs-dist
+  // is listed alongside it since its legacy/Node build also does
+  // environment-dependent dynamic requires internally that are safer left
+  // unbundled. See lib/scanned-pdf-ocr.ts, which loads pdfjs-dist via
+  // dynamic import() for the same reason artifact-export-pptx.ts does for
+  // pptxgenjs.
+  serverExternalPackages: ['pptxgenjs', '@napi-rs/canvas', 'pdfjs-dist'],
 
   // Lint is configured via .eslintrc and run separately with `next lint` or
   // the ESLint CLI. The `eslint` key is no longer supported in next.config.js
@@ -66,11 +74,6 @@ const nextConfig = {
   },
 }
 
-module.exports = withSentryConfig(nextConfig, {
-  org: "domainos",
-  project: "brandos",
+module.exports = nextConfig
 
-  silent: !process.env.CI,
 
-  widenClientFileUpload: true,
-})

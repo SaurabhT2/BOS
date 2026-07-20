@@ -106,6 +106,52 @@ describe('HttpCognitionProvider', () => {
       expect(result.confidence).toBe('degraded')
       expect(result.workspaceId).toBe('ws-3')
     })
+
+    // G-16 (Architecture Verification Report, P2) — this package had no
+    // test exercising the timeout path at all. A numeric change to
+    // DEFAULT_TIMEOUT_MS is deliberately NOT made as part of this finding
+    // (see this file's own note below and the completion report) — real
+    // production/staging latency data is needed to pick a value with
+    // actual margin, which isn't available in this environment. This test
+    // is valuable independent of whatever that number ends up being: it
+    // pins down that a response slower than the configured timeout is
+    // aborted and degrades gracefully, never hangs, and never throws.
+    it('aborts and degrades gracefully when IntelligenceOS responds slower than the configured timeout', async () => {
+      // Fake timers so this test resolves instantly instead of taking
+      // wall-clock milliseconds.
+      vi.useFakeTimers()
+      try {
+        const slowProvider = new HttpCognitionProvider({
+          baseUrl: BASE_URL,
+          apiKey: API_KEY,
+          timeoutMs: 100,
+          maxRetries: 1, // one attempt only — isolates the timeout behavior itself
+        })
+
+        // fetch() that never resolves on its own — only the AbortSignal
+        // (wired up by HttpCognitionProvider around this call) ends it,
+        // exactly like a real hung connection to a slow/unresponsive
+        // IntelligenceOS instance.
+        fetchMock.mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+          return new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => {
+              const err = new Error('This operation was aborted')
+              err.name = 'AbortError'
+              reject(err)
+            })
+          })
+        })
+
+        const resultPromise = slowProvider.resolveCognitionContext({ workspaceId: 'ws-slow' })
+        await vi.advanceTimersByTimeAsync(100)
+        const result = await resultPromise
+
+        expect(result.confidence).toBe('degraded')
+        expect(result.workspaceId).toBe('ws-slow')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   describe('observe', () => {
@@ -131,6 +177,39 @@ describe('HttpCognitionProvider', () => {
       await expect(
         provider.observe({ workspaceId: 'ws-1', requestId: 'req-2', outputText: 'x', score: 0.5 })
       ).resolves.toBeUndefined()
+    })
+
+    // G-14 (Architecture Verification Report, P1) — observe() was the
+    // finding's explicitly named example of a currently-unretried call.
+    it('retries a transient (5xx) failure and succeeds on the second attempt', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('', { status: 503 }))
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+      await provider.observe({ workspaceId: 'ws-1', requestId: 'req-3', outputText: 'x', score: 0.5 })
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('gives up (but still resolves, not throws) once the retry budget is exhausted', async () => {
+      fetchMock.mockResolvedValue(new Response('', { status: 503 }))
+
+      await expect(
+        provider.observe({ workspaceId: 'ws-1', requestId: 'req-4', outputText: 'x', score: 0.5 })
+      ).resolves.toBeUndefined()
+
+      // FIRE_AND_FORGET_RETRY_OPTIONS.attempts = 2 — one retry, two calls total.
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not retry a 400 (non-retryable) — fails fast on the first attempt', async () => {
+      fetchMock.mockResolvedValue(new Response('', { status: 400 }))
+
+      await expect(
+        provider.observe({ workspaceId: 'ws-1', requestId: 'req-5', outputText: 'x', score: 0.5 })
+      ).resolves.toBeUndefined()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     })
   })
 

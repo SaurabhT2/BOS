@@ -217,6 +217,42 @@ export async function analyzeMultipleImages(
   };
 }
 
+/**
+ * G-19 (Architecture Verification Report, P2) — scanned-PDF OCR.
+ *
+ * Approved approach (see completion report): reuse this package's existing
+ * VLM/vision provider infrastructure (the exact same `callWithMode(...,
+ * 'cloud', { imageBase64 })` primitive `analyzeImageWithVLM` above already
+ * uses) instead of adding a new dedicated OCR vendor/library. This function
+ * is deliberately a thin sibling of `analyzeImageWithVLM`, not a variant of
+ * it — the prompt asks for verbatim text transcription, not structured
+ * brand analysis, and the return type is plain text, not
+ * `VLMAnalysisResult`. Used by apps/web's `scanned-pdf-ocr.ts` to turn a
+ * rasterized scanned-PDF page image into real `rawContent` for
+ * `KnowledgeProcessor`, closing the gap `document-extraction.ts`'s own
+ * "no LLM calls" boundary deliberately leaves open for a higher layer to
+ * fill.
+ *
+ * Returns `''` (not a placeholder string) on failure/unavailability —
+ * callers are expected to fall back to their own placeholder/status
+ * convention (see DocumentExtractionResult), not this function's.
+ */
+export async function extractTextFromImageWithVLM(imageBase64: string): Promise<string> {
+  const prompt = `You are an OCR engine. Transcribe ALL text visible in this image, verbatim, exactly as it appears — do not summarize, paraphrase, or describe the image. Preserve reading order (top to bottom, left to right). Output ONLY the transcribed text, with no commentary, no markdown formatting, and no preamble like "Here is the text:". If the image contains no legible text, output nothing.`
+
+  try {
+    const result = await callWithMode(prompt, 'cloud', { imageBase64 })
+    if (isUnavailable(result)) {
+      console.warn('[VLMService] OCR unavailable — no vision providers:', result.message)
+      return ''
+    }
+    return result.content.trim()
+  } catch (err) {
+    console.warn('[VLMService] OCR provider call failed:', (err as Error).message)
+    return ''
+  }
+}
+
 export async function checkBrandCompliance(
   imageBase64: string,
   brandProfile: Record<string, any>

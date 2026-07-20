@@ -104,6 +104,7 @@ import {
   submitFeedback,
   getFeedbackForCampaign,
   getUserFeedbackStats,
+  resolveDocumentIndexStatus,
 } from '../db/dbService';
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
@@ -446,5 +447,27 @@ describe('getUserFeedbackStats', () => {
     expect(error).toBe('Connection error');
   });
 });
+
+// ── G-25 (Architecture Verification Report, P1) ────────────────────────────
+// resolveDocumentIndexStatus() is the pure decision function behind the
+// upload route's honest-status fix: 'indexed' must only be reachable when
+// IntelligenceOS-side extraction genuinely completed or there was nothing to
+// wait for; a failed/timed-out attempt must produce a distinct status, never
+// a false 'indexed'. Pure function — no Supabase mocking needed.
+describe('resolveDocumentIndexStatus', () => {
+  it("returns 'indexed' when the ingest attempt succeeded", () => {
+    expect(resolveDocumentIndexStatus('succeeded')).toBe('indexed');
+  });
+
+  it("returns 'indexed' when IntelligenceOS is not configured for this deployment", () => {
+    expect(resolveDocumentIndexStatus('not_configured')).toBe('indexed');
+  });
+
+  it("returns 'indexing_pending' (never 'indexed') when the ingest attempt failed or timed out", () => {
+    expect(resolveDocumentIndexStatus('failed')).toBe('indexing_pending');
+    expect(resolveDocumentIndexStatus('failed')).not.toBe('indexed');
+  });
+});
+
 
 

@@ -1000,6 +1000,34 @@ export async function updateAssetVlmResult(
 }
 
 /**
+ * G-25 (Architecture Verification Report, P1) — pure decision function: what
+ * `BrandAssetStatus` a document asset should transition to once its
+ * IntelligenceOS knowledge-ingestion attempt has resolved (or been skipped).
+ *
+ * Deliberately a pure function, not folded into the route handler, so this
+ * status-honesty logic is unit-testable without a Next.js request/response
+ * harness (this repo has no such harness for apps/web routes).
+ *
+ * - 'succeeded'      → the ingest call completed and returned an asset id.
+ * - 'not_configured' → IntelligenceOS is not configured for this deployment
+ *                      (`ingestWorkspaceKnowledgeAsset()` returns `null` in
+ *                      this case, by design — see its docblock). There is
+ *                      nothing to wait for, so the asset is genuinely usable.
+ * - 'failed'         → the ingest call threw or timed out.
+ */
+export type DocumentIngestOutcome = 'succeeded' | 'not_configured' | 'failed';
+
+export function resolveDocumentIndexStatus(outcome: DocumentIngestOutcome): BrandAssetStatus {
+  switch (outcome) {
+    case 'succeeded':
+    case 'not_configured':
+      return 'indexed';
+    case 'failed':
+      return 'indexing_pending';
+  }
+}
+
+/**
  * Cognitive Platform Evolution Program, EM-2.6 (Ingestion Correlation &
  * Confirmation). Records the IntelligenceOS knowledge-asset id returned by
  * a successful `POST /v1/knowledge/ingest` call. Deliberately NOT folded

@@ -16,9 +16,25 @@
  * for classification, and analyze/route.ts for the VLM/LLM summarization
  * step, which stays where it is (it needs the asset record, BYOK key
  * resolution, etc. that this module has no business knowing about).
+ *
+ * G-19 (Architecture Verification Report, P2) — PPTX text extraction is
+ * now implemented here (JSZip + fast-xml-parser — approved approach, see
+ * completion report), since it's pure parsing (a PPTX is a ZIP of slide
+ * XML) and needs no LLM, staying within this module's boundary. Scanned-
+ * PDF OCR does NOT live here — it genuinely needs an LLM/vision call
+ * (approved approach: reuse existing VLM provider infra), which this
+ * module's own "no LLM" boundary excludes. See
+ * ./scanned-pdf-ocr.ts::extractDocumentTextWithOcrFallback() — a thin
+ * wrapper around this module's extractDocumentText() that adds the OCR
+ * fallback step for the one case this module still can't fully resolve.
+ * Callers that want OCR support call that wrapper instead of this
+ * function directly; this function's own PDF branch is unchanged.
  */
 
-export type ExtractionStatus = 'extracted' | 'unsupported' | 'failed'
+import JSZip from 'jszip'
+import { XMLParser } from 'fast-xml-parser'
+
+export type ExtractionStatus = 'extracted' | 'unsupported' | 'failed' | 'scanned_pdf_needs_ocr'
 
 export interface DocumentExtractionResult {
   readonly text: string
@@ -62,11 +78,15 @@ export async function extractDocumentText(
       const result = await parser.getText()
       const text = (result.text ?? '').slice(0, MAX_EXTRACTED_CHARS)
       if (!text.trim()) {
-        // Scanned PDF — no text layer; OCR remains out of scope (unchanged
-        // from the pre-EM-2.1 behavior — see the audit's §2.6 table).
+        // Scanned PDF — no text layer. G-19: this module still does not
+        // do OCR itself (would need an LLM call, outside this module's
+        // boundary) — but now reports a status precise enough for a
+        // caller to know OCR is exactly what's needed here, rather than
+        // a generic 'unsupported' indistinguishable from "we'll never
+        // support this format." See ./scanned-pdf-ocr.ts.
         return {
           text: `[Scanned PDF: ${filename}, ${fileBytes.length} bytes — OCR not implemented]`,
-          status: 'unsupported',
+          status: 'scanned_pdf_needs_ocr',
         }
       }
       return { text, status: 'extracted' }
@@ -87,15 +107,7 @@ export async function extractDocumentText(
   }
 
   if (isPptx) {
-    // PPTX is a ZIP of slide XML. Still not implemented (unchanged from
-    // pre-EM-2.1 — this EM's scope was moving extraction earlier, not
-    // adding a new extractor; a real PPTX extractor is a separate,
-    // still-open follow-up, now visible in this single shared module
-    // instead of buried in the analyze route).
-    return {
-      text: `[PPTX: ${filename}, ${fileBytes.length} bytes — text extraction not yet implemented]`,
-      status: 'unsupported',
-    }
+    return extractPptxText(fileBytes, filename)
   }
 
   return {
@@ -105,12 +117,112 @@ export async function extractDocumentText(
 }
 
 /**
- * True when a DocumentExtractionResult (or any raw extracted-text string
- * built by this module's conventions) is real content, not one of the
- * placeholder strings above. Centralizes the "starts with '['" check that
- * previously lived inline in analyze/route.ts, so both callers use the
- * same rule.
+ * G-19 (Architecture Verification Report, P2) — PPTX text extraction.
+ *
+ * A .pptx file is a ZIP archive; slide content lives at
+ * `ppt/slides/slideN.xml` as DrawingML XML, one file per slide. Text runs
+ * are `<a:t>` elements nested inside `<a:p>` (paragraph) inside shape
+ * text bodies — this walks the parsed XML tree collecting every `<a:t>`
+ * text node's content, in document order, per slide, then joins slides
+ * with a blank line. This intentionally does NOT attempt to reconstruct
+ * layout, formatting, tables, or speaker notes — just the visible text
+ * runs, which is what KnowledgeProcessor's downstream vocabulary/
+ * framework/pattern extractors actually consume (matching this module's
+ * existing PDF/DOCX extractors, which are similarly text-only).
  */
+async function extractPptxText(
+  fileBytes: Buffer,
+  filename: string,
+): Promise<DocumentExtractionResult> {
+  try {
+    const zip = await JSZip.loadAsync(fileBytes)
+
+    const slideFiles = Object.keys(zip.files)
+      .filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))
+      .sort((a, b) => {
+        const numA = Number(/slide(\d+)\.xml$/.exec(a)?.[1] ?? 0)
+        const numB = Number(/slide(\d+)\.xml$/.exec(b)?.[1] ?? 0)
+        return numA - numB
+      })
+
+    if (slideFiles.length === 0) {
+      return {
+        text: `[PPTX: ${filename}, ${fileBytes.length} bytes — no slide content found]`,
+        status: 'unsupported',
+      }
+    }
+
+    const parser = new XMLParser({
+      ignoreAttributes: true,
+      // Text runs can legitimately be numeric-looking ("2024", "50%") —
+      // never coerce them to numbers/booleans, this is text extraction.
+      parseTagValue: false,
+      // A slide with exactly one text run would otherwise parse <a:t> as
+      // a single object instead of an array of one, breaking the uniform
+      // array-walk below.
+      isArray: (tagName) => tagName === 'a:t',
+    })
+
+    const slideTexts: string[] = []
+    for (const path of slideFiles) {
+      const xml = await zip.files[path]!.async('text')
+      let parsed: unknown
+      try {
+        parsed = parser.parse(xml)
+      } catch {
+        continue // one malformed slide must not fail the whole deck
+      }
+      const runs: string[] = []
+      collectTextRuns(parsed, runs)
+      const slideText = runs.map((r) => r.trim()).filter(Boolean).join(' ')
+      if (slideText) slideTexts.push(slideText)
+    }
+
+    const text = slideTexts.join('\n\n').slice(0, MAX_EXTRACTED_CHARS)
+    return {
+      text,
+      status: text.trim() ? 'extracted' : 'unsupported',
+    }
+  } catch {
+    return { text: `[PPTX extraction failed: ${filename}]`, status: 'failed' }
+  }
+}
+
+/**
+ * Recursively walks a parsed XML tree (fast-xml-parser's plain-object
+ * shape) collecting every `a:t` text-run value it finds, in document
+ * order. Deliberately structure-agnostic (doesn't assume a specific
+ * shape/depth for `<a:p>`/`<a:r>`) — DrawingML nesting varies (grouped
+ * shapes, tables, SmartArt all nest differently) and a rigid path-based
+ * walk would silently miss text in less-common slide layouts.
+ */
+function collectTextRuns(node: unknown, out: string[]): void {
+  if (node === null || node === undefined) return
+
+  if (Array.isArray(node)) {
+    for (const item of node) collectTextRuns(item, out)
+    return
+  }
+
+  if (typeof node === 'object') {
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (key === 'a:t') {
+        const values = Array.isArray(value) ? value : [value]
+        for (const v of values) {
+          if (typeof v === 'string') out.push(v)
+          else if (v !== null && typeof v === 'object' && '#text' in (v as Record<string, unknown>)) {
+            const inner = (v as Record<string, unknown>)['#text']
+            if (typeof inner === 'string') out.push(inner)
+          }
+        }
+      } else {
+        collectTextRuns(value, out)
+      }
+    }
+  }
+}
+
+
 export function isRealExtractedText(text: string | undefined | null): boolean {
   return typeof text === 'string' && text.trim().length > 0 && !text.trim().startsWith('[')
 }

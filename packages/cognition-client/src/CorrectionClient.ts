@@ -11,6 +11,9 @@
  * unreachable from BrandOS before this program.
  */
 
+import { withRetry } from '@brandos/shared-utils'
+import { FIRE_AND_FORGET_RETRY_OPTIONS } from './retryPolicy'
+
 const DEFAULT_TIMEOUT_MS = 5000
 
 export interface CorrectionClientConfig {
@@ -31,8 +34,14 @@ export interface CorrectionInput {
 export class CorrectionClient {
   constructor(private readonly config: CorrectionClientConfig) {}
 
-  /** Fire-and-forget from the caller's point of view — same convention as FeedbackEventClient. */
+  /** Fire-and-forget from the caller's point of view — same convention as FeedbackEventClient.
+   *  G-14 (Architecture Verification Report, P1) — now retries transient
+   *  failures (see retryPolicy.ts) before giving up. */
   async record(correction: CorrectionInput): Promise<void> {
+    await withRetry(() => this._attempt(correction), FIRE_AND_FORGET_RETRY_OPTIONS)
+  }
+
+  private async _attempt(correction: CorrectionInput): Promise<void> {
     const controller = new AbortController()
     const timeout = setTimeout(
       () => controller.abort(),

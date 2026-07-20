@@ -579,21 +579,26 @@ function runPhaseCLifecycle(
   })
 
   // Approval workflow evaluation
-  // NOTE: still passes input.userId as workspaceId here, matching its prior
-  // (pre-fix) behavior. Not touched in this change — ApprovalService is
-  // outside the scope of the GTM Critical backlog this pass implements, and
-  // changing its workspace scoping needs its own verification pass against
-  // brandos_artifact_approvals consumers before being changed.
+  // BUGFIX (G-24, Architecture Verification Report, P1): was passing
+  // input.userId as workspaceId, same conflation bug already fixed above
+  // for the audit-trail/versioning calls. This was previously left
+  // deliberately unfixed pending a verification pass against
+  // brandos_artifact_approvals consumers (see ApprovalService's own
+  // getPending() reader). That audit is now complete: `getPending()` has
+  // zero callers anywhere in either repository, and no route/UI queries
+  // `brandos_artifact_approvals` directly — nothing depends on the
+  // (incorrect) userId-as-workspaceId convention, so this is a safe,
+  // isolated fix with no consumer migration required.
   const approvalResult = globalApprovalService.evaluate(stamped, {
     score:        governanceScore,
-    workspaceId:  input.userId,
+    workspaceId:  input.workspaceId,
     artifactType: taskType,
   })
 
   if (approvalResult.requiresApproval) {
     void globalApprovalService.submit(input.requestId, stamped, {
       score:        governanceScore,
-      workspaceId:  input.userId,
+      workspaceId:  input.workspaceId,
       artifactType: taskType,
     })
   }
@@ -607,15 +612,17 @@ function runPhaseCLifecycle(
 //
 // CPLOrchestrator.orchestrate() fires recordArtifactObservation(score=0) because
 // the real governance score is computed later inside executeArtifactPipeline().
-// The orchestrator returns governanceScore=0 (placeholder) — brand memory's
-// Gate 1 (score < 75) then silently drops every generation observation.
+// The orchestrator returns governanceScore=0 (placeholder) — IntelligenceOS's
+// SignalExtractor.isMeaningfulScore() gate (score > 0, see that function's own
+// definition) then silently drops every generation observation, since 0 is not
+// > 0.
 //
 // Fix: after executeArtifactPipeline() computes the real governance score, call
 // recordBrandMemoryObservation() with the real score so Brand Memory can learn
 // from accepted generations. The orchestrator's fire-and-forget call with score=0
 // is redundant but harmless (it fires before the pipeline score is known and
-// will be dropped by Gate 1 as before — it is NOT removed here to preserve the
-// orchestrator contract).
+// will be dropped by isMeaningfulScore() as before — it is NOT removed here to
+// preserve the orchestrator contract).
 //
 // Calling convention:
 //   - Only called when govResult.passed === true (artifact accepted)
@@ -638,10 +645,10 @@ function recordBrandMemoryAfterPipeline(
   // resolvedProvider/resolvedModel (Phase 5 — Runtime Consolidation,
   // populated from callWithMode()'s LLMResponse) — this call site just
   // never read them. This is the observation whose score actually
-  // survives Brand Memory's Gate 1 threshold and reaches the Learning
-  // Pipeline (the orchestrator's own observe() call always fires with
-  // score=0 and is dropped by that same gate — see this function's
-  // header comment above), so this is the metadata that matters.
+  // survives IntelligenceOS's isMeaningfulScore() gate (score > 0) and
+  // reaches the Learning Pipeline (the orchestrator's own observe() call
+  // always fires with score=0 and is dropped by that same gate — see this
+  // function's header comment above), so this is the metadata that matters.
   //
   // `topic` follow-up: a separately-proposed fix added `topic` to
   // orchestrator.ts's two observe() calls (Defect 3 in the accompanying
@@ -653,6 +660,7 @@ function recordBrandMemoryAfterPipeline(
   // exactly the score=0 ones that gate discards (per that fix's own
   // header comment, and confirmed here). `topic` has to reach THIS call
   // site — the one with the real, surviving score — for the fix to
+
   // actually produce a second signal. ArtifactPipelineInput already
   // carries the resolved topic directly (`topic: string`, "the
   // user-facing topic / prompt for this generation" — see this file's
@@ -923,8 +931,9 @@ async function runCarouselPipeline(
 
       // RC-1 FIX: record brand memory observation with the REAL governance score.
       // The orchestrator fires this with score=0 (before pipeline runs) — that call
-      // is always dropped by BrandMemoryServiceV2 Gate 1 (0 < 75). This call uses
-      // the real richness score so Brand Memory can actually learn from accepted artifacts.
+      // is always dropped by SignalExtractor.isMeaningfulScore() (score > 0; 0 is
+      // not > 0). This call uses the real richness score so Brand Memory can
+      // actually learn from accepted artifacts.
       recordBrandMemoryAfterPipeline(
         attemptInput,
         'carousel',

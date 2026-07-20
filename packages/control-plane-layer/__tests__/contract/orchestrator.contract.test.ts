@@ -163,14 +163,25 @@ describe('CPLOrchestrator contract', () => {
     expect(result.cognitionContext).toEqual(MOCK_COGNITION_CONTEXT)
   })
 
+  // G-2 (Architecture Verification Report, P1) — Option A consolidated
+  // away orchestrate()'s own success-path observe() call for
+  // carousel/deck/report/newsletter (recordBrandMemoryAfterPipeline(),
+  // downstream in artifact-pipeline.ts, now fires the one real call for
+  // those types). This test switches BASE_REQUEST's carousel taskType to
+  // 'post' — a type NOT covered by that consolidation — specifically to
+  // keep exercising the topic-propagation logic this test is actually
+  // about, independent of the consolidation. See the dedicated
+  // "Observation consolidation (G-2)" block below for tests of the
+  // consolidation itself.
   it('calls observe() fire-and-forget after generation', async () => {
-    await orchestrator.orchestrate(BASE_REQUEST)
+    const req: GenerationRequest = { ...BASE_REQUEST, taskType: 'post' }
+    await orchestrator.orchestrate(req)
     // Fire-and-forget — it should have been called (void-ed, not awaited to completion)
     expect(mockClient.observe).toHaveBeenCalledTimes(1)
     expect(mockClient.observe).toHaveBeenCalledWith(
       expect.objectContaining({
-        requestId: BASE_REQUEST.requestId,
-        workspaceId: BASE_REQUEST.workspaceId,
+        requestId: req.requestId,
+        workspaceId: req.workspaceId,
       })
     )
   })
@@ -180,11 +191,15 @@ describe('CPLOrchestrator contract', () => {
   // never emit its expertise_domains signal. This asserts the same topic
   // ContractAssembler anchors the prompt to (userPrompt, truncated to 120
   // chars) is now reported to observe() as well.
+  //
+  // Uses taskType 'post' for the same reason as the test above — G-2
+  // consolidated away carousel's success-path observe() call.
   it('propagates a topic (derived from userPrompt) into observe()', async () => {
-    await orchestrator.orchestrate(BASE_REQUEST)
+    const req: GenerationRequest = { ...BASE_REQUEST, taskType: 'post' }
+    await orchestrator.orchestrate(req)
     expect(mockClient.observe).toHaveBeenCalledWith(
       expect.objectContaining({
-        topic: BASE_REQUEST.userPrompt.slice(0, 120),
+        topic: req.userPrompt.slice(0, 120),
       })
     )
   })
@@ -202,11 +217,52 @@ describe('CPLOrchestrator contract', () => {
     )
   })
 
+  // Uses taskType 'post' for the same reason as the two tests above.
   it('omits topic when userPrompt is empty/whitespace-only', async () => {
-    const req: GenerationRequest = { ...BASE_REQUEST, userPrompt: '   ' }
+    const req: GenerationRequest = { ...BASE_REQUEST, taskType: 'post', userPrompt: '   ' }
     await orchestrator.orchestrate(req)
     const call = (mockClient.observe as any).mock.calls[0][0]
     expect(call.topic).toBeUndefined()
+  })
+
+  // ── Observation consolidation (G-2, Architecture Verification Report, P1) ──
+  //
+  // recordBrandMemoryAfterPipeline() (artifact-pipeline.ts) — not exercised
+  // by these contract tests, which stop at orchestrate() — is the call
+  // that now carries the real, post-governance-repair score for these 4
+  // types. These tests only assert orchestrate()'s OWN redundant call is
+  // gone; they do not (and cannot, from this file) assert the downstream
+  // call exists — that is covered by control-plane-layer's own
+  // artifact-pipeline-level tests.
+  describe('observation consolidation', () => {
+    it.each(['carousel', 'deck', 'report', 'newsletter'] as const)(
+      'does NOT call observe() on success for taskType=%s (consolidated — recordBrandMemoryAfterPipeline() covers it downstream)',
+      async (taskType) => {
+        const req: GenerationRequest = { ...BASE_REQUEST, taskType }
+        await orchestrator.orchestrate(req)
+        expect(mockClient.observe).not.toHaveBeenCalled()
+      }
+    )
+
+    it.each(['post', 'chat'] as const)(
+      'STILL calls observe() on success for taskType=%s (no downstream equivalent exists for this type)',
+      async (taskType) => {
+        const req: GenerationRequest = { ...BASE_REQUEST, taskType }
+        await orchestrator.orchestrate(req)
+        expect(mockClient.observe).toHaveBeenCalledTimes(1)
+      }
+    )
+
+    it('still calls observe() on the FAILURE path even for a consolidated taskType (carousel) — the catch-path call is untouched by G-2', async () => {
+      ;(orchestrator as any).runStructuredPipeline = vi.fn(async () => {
+        throw new Error('AI runtime unavailable')
+      })
+      await expect(orchestrator.orchestrate(BASE_REQUEST)).rejects.toThrow()
+      expect(mockClient.observe).toHaveBeenCalledTimes(1)
+      expect(mockClient.observe).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'failure' })
+      )
+    })
   })
 
   // ── Degraded context fallback ───────────────────────────────────────────────

@@ -19,13 +19,16 @@
  *   Images:    POST sets status = 'processing'.
  *              POST /api/assets/:id/analyze transitions to 'indexed' (or 'failed').
  *              analyze is called automatically server-side after successful upload.
- *   Documents: POST sets status = 'processing', then immediately 'indexed'
- *              because documents have no blocking analysis step (analysis is
- *              triggered client-side via the Analyze button like images).
- *              Milestone 3, Phase 1: also fire-and-forget handed off to
- *              IntelligenceOS via ingestWorkspaceKnowledgeAsset() (CPL) for
- *              knowledge extraction. Best-effort — never blocks or fails
- *              the upload; see that function's docblock.
+ *   Documents: POST sets status = 'processing'; asset content extraction and
+ *              handoff to IntelligenceOS (ingestWorkspaceKnowledgeAsset(),
+ *              Milestone 3 Phase 1) begins immediately but does not block the
+ *              upload response. The status only transitions once that
+ *              attempt resolves (G-25, Architecture Verification Report,
+ *              P1): 'indexed' on success or on a deployment with
+ *              IntelligenceOS not configured (nothing to wait for);
+ *              'indexing_pending' if the ingest call errors or times out —
+ *              never a false 'indexed'. Users can retry via the Analyze
+ *              button, which also re-attempts ingestion.
  *
  * P2 QUOTA ENFORCEMENT (enforced before any storage/DB write):
  *   1. Storage quota  — 413 if adding files would exceed tier limit
@@ -42,6 +45,7 @@ import {
   createAsset,
   updateAssetStatus,
   recordAssetIntelligenceSync,
+  resolveDocumentIndexStatus,
   getTotalAssetStorageForWorkspace,
   countMonthlyUploadsForWorkspace,
 } from '@brandos/auth'
@@ -53,7 +57,7 @@ import {
   ingestWorkspaceKnowledgeAsset,
 } from '@brandos/control-plane-layer'
 import type { BrandAssetRow } from '@brandos/contracts'
-import { extractDocumentText } from '@/lib/document-extraction'
+import { extractDocumentTextWithOcrFallback } from '@/lib/scanned-pdf-ocr'
 import { classifyAssetType } from '@/lib/asset-classification'
 
 const MAX_FILE_SIZE       = 50 * 1024 * 1024 // 50 MB per-file hard cap
@@ -228,13 +232,24 @@ export async function POST(req: NextRequest) {
 
       // ── Status transition for non-image assets ─────────────────────────────
       // Documents (PDF, DOCX, PPTX, TXT, MD) have no blocking analysis step
-      // that must complete before they are usable. Transition them directly to
-      // 'indexed' so they do not stay stuck in 'processing'.
+      // that must complete before they are usable in the local sense — but
+      // G-25 (Architecture Verification Report, P1): 'indexed' must not be
+      // set until IntelligenceOS-side knowledge extraction has actually
+      // resolved (success, genuinely-not-configured, or failure/timeout),
+      // not merely because the local DB row was written. Previously this
+      // route set 'indexed' here, synchronously, before the ingestion call
+      // below had even started — meaning a user could see "Indexed" while
+      // extraction was still running, or had already failed silently.
+      //
+      // The asset stays at its `createAsset()`-assigned 'processing' status
+      // until the ingestion attempt below resolves. This does NOT block the
+      // upload response — the eventual status transition happens in the
+      // same fire-and-forget continuation that already existed for
+      // recordAssetIntelligenceSync(), so upload latency is unchanged.
       // Users can still click "Analyze" to run document analysis on demand.
       const isImage = file.type.startsWith('image/')
       if (!isImage) {
-        const { data: transitioned } = await updateAssetStatus(assetId, workspaceId, 'indexed')
-        createdAssets.push(transitioned ?? asset)
+        createdAssets.push(asset)
 
         // ── Milestone 3, Phase 1 / EM-2.1: hand off to IntelligenceOS ───────
         // Fire-and-forget — never blocks the upload response, and a
@@ -255,10 +270,22 @@ export async function POST(req: NextRequest) {
         // happened to click "Analyze." Real extraction now runs here too,
         // via the same shared module the analyze route uses, so the
         // first `/v1/knowledge/ingest` call already carries real content
-        // for every format this repo can extract (still just PDF/DOCX/
-        // text/markdown — PPTX extraction and scanned-PDF OCR remain
-        // unimplemented, see apps/web/lib/document-extraction.ts).
-        const rawContent = await extractDocumentText(
+        // for every format this repo can extract — PDF/DOCX/text/
+        // markdown/PPTX (G-19, Architecture Verification Report, P2) and
+        // scanned (image-only) PDFs via OCR (G-19). See
+        // apps/web/lib/document-extraction.ts and
+        // apps/web/lib/scanned-pdf-ocr.ts.
+        //
+        // G-19 follow-up: extraction now happens INSIDE this fire-and-
+        // forget continuation, not awaited in the main upload-response
+        // path (unlike before G-19). Plain-text/PDF/DOCX extraction is
+        // local and fast (milliseconds) either way, but G-19's OCR path
+        // is one-or-more sequential LLM/vision calls (real seconds).
+        // Awaiting that synchronously here would reintroduce, for the
+        // scanned-PDF subset of uploads, exactly the upload-latency
+        // regression G-25 was written to avoid for the ingestion step —
+        // extraction needed to move with it.
+        void extractDocumentTextWithOcrFallback(
           buffer,
           file.type || 'application/octet-stream',
           file.name,
@@ -271,26 +298,37 @@ export async function POST(req: NextRequest) {
             )
             return undefined
           })
-
-        void ingestWorkspaceKnowledgeAsset(
-          {
-            ownerType: 'workspace',
-            workspaceId,
-            userId: user.id,
-            assetType: classifyAssetType(file.name, rawContent),
-            title: file.name,
-            sourceFileRef: storagePath,
-          },
-          rawContent,
-        )
-          .then((result) => {
-            if (result) return recordAssetIntelligenceSync(assetId, workspaceId, result.assetId)
+          .then((rawContent) =>
+            ingestWorkspaceKnowledgeAsset(
+              {
+                ownerType: 'workspace',
+                workspaceId,
+                userId: user.id,
+                assetType: classifyAssetType(file.name, rawContent),
+                title: file.name,
+                sourceFileRef: storagePath,
+              },
+              rawContent,
+            )
+          )
+          .then(async (result) => {
+            // result === null means IntelligenceOS is not configured for
+            // this deployment (see ingestWorkspaceKnowledgeAsset's
+            // docblock) — nothing to wait for, so the asset is genuinely
+            // usable now.
+            if (result) await recordAssetIntelligenceSync(assetId, workspaceId, result.assetId)
+            await updateAssetStatus(
+              assetId,
+              workspaceId,
+              resolveDocumentIndexStatus(result ? 'succeeded' : 'not_configured'),
+            )
           })
-          .catch((err: unknown) => {
+          .catch(async (err: unknown) => {
             console.error(
               `[POST /api/assets] knowledge ingestion failed for asset ${assetId} (non-fatal, upload already succeeded):`,
               err,
             )
+            await updateAssetStatus(assetId, workspaceId, resolveDocumentIndexStatus('failed'))
           })
 
       } else {

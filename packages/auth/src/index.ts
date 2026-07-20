@@ -87,6 +87,7 @@ export {
   updateAssetStatus,
   updateAssetVlmResult,
   recordAssetIntelligenceSync,
+  resolveDocumentIndexStatus,
   getTotalAssetStorageForWorkspace,
   countMonthlyUploadsForWorkspace,
   // Provider Credentials — P3 (BYOK)
@@ -176,6 +177,9 @@ export type {
   BrandAssetStatus,
   NewBrandAsset,
 } from '@brandos/contracts';
+
+// G-25 (Architecture Verification Report, P1)
+export type { DocumentIngestOutcome } from './db/dbService';
 
 // ── P3 — BYOK & Provider Observability types (pass-through from @brandos/contracts) ──
 export type {

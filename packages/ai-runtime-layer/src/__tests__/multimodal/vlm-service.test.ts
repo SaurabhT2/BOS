@@ -18,7 +18,7 @@ vi.mock('../../llmRouter', () => ({
 }))
 
 import { callWithMode, isUnavailable } from '../../llmRouter'
-import { analyzeImageWithVLM, checkBrandCompliance } from '../../vlmService'
+import { analyzeImageWithVLM, checkBrandCompliance, extractTextFromImageWithVLM } from '../../vlmService'
 import type { VLMAnalysisRequest } from '../../vlmService'
 
 const SAMPLE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
@@ -161,5 +161,58 @@ describe('P3 — checkBrandCompliance()', () => {
     const result = await checkBrandCompliance(SAMPLE_BASE64, {})
     expect(result.score).toBe(50)
     expect(result.issues[0]).toContain('unavailable')
+  })
+})
+
+// G-19 (Architecture Verification Report, P2) — scanned-PDF OCR reuses
+// this package's existing VLM infra via extractTextFromImageWithVLM(),
+// a thin sibling of analyzeImageWithVLM() above: same callWithMode()
+// primitive, different prompt (verbatim transcription, not structured
+// brand analysis), plain-text return instead of a parsed VLMAnalysisResult.
+describe('G-19 — extractTextFromImageWithVLM()', () => {
+  beforeEach(() => {
+    vi.mocked(isUnavailable).mockReturnValue(false)
+  })
+
+  afterEach(() => { vi.resetAllMocks() })
+
+  it('passes imageBase64 to callWithMode and returns the trimmed transcription', async () => {
+    vi.mocked(callWithMode).mockResolvedValue({ content: '  Invoice #1042\nTotal: $500.00  ' } as any)
+
+    const text = await extractTextFromImageWithVLM(SAMPLE_BASE64)
+
+    expect(text).toBe('Invoice #1042\nTotal: $500.00')
+    const [, , options] = vi.mocked(callWithMode).mock.calls[0]!
+    expect(options).toEqual({ imageBase64: SAMPLE_BASE64 })
+  })
+
+  it('sends an OCR-transcription prompt, not a structured-analysis prompt', async () => {
+    vi.mocked(callWithMode).mockResolvedValue({ content: 'some text' } as any)
+
+    await extractTextFromImageWithVLM(SAMPLE_BASE64)
+
+    const prompt = vi.mocked(callWithMode).mock.calls[0]![0] as string
+    expect(prompt.toLowerCase()).toContain('ocr')
+    expect(prompt.toLowerCase()).toContain('transcribe')
+    // Must NOT ask for JSON — this is plain-text transcription, unlike
+    // every other function in this file.
+    expect(prompt).not.toContain('Return ONLY valid JSON')
+  })
+
+  it('returns an empty string (not a placeholder) when no vision provider is available', async () => {
+    vi.mocked(isUnavailable).mockReturnValue(true)
+    vi.mocked(callWithMode).mockResolvedValue({ unavailable: true, message: 'no key configured' } as any)
+
+    const text = await extractTextFromImageWithVLM(SAMPLE_BASE64)
+
+    expect(text).toBe('')
+  })
+
+  it('returns an empty string (never throws) when the provider call rejects', async () => {
+    vi.mocked(callWithMode).mockRejectedValue(new Error('network error'))
+
+    const text = await extractTextFromImageWithVLM(SAMPLE_BASE64)
+
+    expect(text).toBe('')
   })
 })

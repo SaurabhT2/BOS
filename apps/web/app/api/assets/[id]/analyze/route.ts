@@ -41,7 +41,8 @@ import {
 import { getSupabaseAdmin } from '@brandos/auth'
 import { getProviderKey } from '@brandos/runtime-config'
 import { ingestWorkspaceKnowledgeAsset } from '@brandos/control-plane-layer'
-import { extractDocumentText, isRealExtractedText } from '@/lib/document-extraction'
+import { isRealExtractedText } from '@/lib/document-extraction'
+import { extractDocumentTextWithOcrFallback } from '@/lib/scanned-pdf-ocr'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -185,8 +186,13 @@ async function analyzeDocument(
   // EM-2.1: extraction itself now lives in a shared module so
   // app/api/assets/route.ts (upload time) can run the same logic instead
   // of only ever extracting when a user clicks "Analyze." See
-  // apps/web/lib/document-extraction.ts.
-  const { text: textContent, status: extractionStatus } = await extractDocumentText(
+  // apps/web/lib/document-extraction.ts. G-19 (Architecture Verification
+  // Report, P2): uses the OCR-capable wrapper so a manual "Analyze" click
+  // on a scanned PDF also gets real transcribed content, not the
+  // placeholder string — this route already awaits synchronously (the
+  // user directly triggered this action and is waiting on a result), so
+  // OCR's added latency here is expected, unlike the upload-time path.
+  const { text: textContent, status: extractionStatus } = await extractDocumentTextWithOcrFallback(
     fileBytes,
     mimeType,
     filename,

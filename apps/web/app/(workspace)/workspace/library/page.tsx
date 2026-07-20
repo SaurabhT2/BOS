@@ -44,6 +44,7 @@ function isImage(mimeType: string): boolean {
 const STATUS_CONFIG: Record<BrandAssetStatus, { label: string; color: string; icon: React.ReactNode }> = {
   uploading:  { label: 'Uploading',  color: 'text-blue-400 bg-blue-400/10',   icon: <Loader2 className="w-3 h-3 animate-spin" /> },
   processing: { label: 'Processing', color: 'text-yellow-400 bg-yellow-400/10', icon: <Clock className="w-3 h-3 animate-pulse" /> },
+  indexing_pending: { label: 'Indexing incomplete', color: 'text-orange-400 bg-orange-400/10', icon: <AlertCircle className="w-3 h-3" /> },
   indexed:    { label: 'Indexed',    color: 'text-green-400 bg-green-400/10',  icon: <CheckCircle className="w-3 h-3" /> },
   failed:     { label: 'Failed',     color: 'text-red-400 bg-red-400/10',      icon: <AlertCircle className="w-3 h-3" /> },
   archived:   { label: 'Archived',   color: 'text-gray-500 bg-gray-500/10',    icon: <Archive className="w-3 h-3" /> },
@@ -402,10 +403,12 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
         )}
 
         {/* If not yet analyzed, prompt the user */}
-        {!asset.vlm_analysis && asset.status === 'indexed' && (
+        {!asset.vlm_analysis && (asset.status === 'indexed' || asset.status === 'indexing_pending') && (
           <div className="mb-6 p-3 rounded-lg bg-gray-900/50 border border-dashed border-gray-700">
             <p className="text-xs text-gray-500">
-              This {isImage(asset.mime_type) ? 'image' : 'document'} hasn&rsquo;t been analyzed yet.
+              {asset.status === 'indexing_pending'
+                ? `Brand Intelligence extraction didn't complete for this ${isImage(asset.mime_type) ? 'image' : 'document'}. `
+                : `This ${isImage(asset.mime_type) ? 'image' : 'document'} hasn't been analyzed yet. `}
               Run analysis to extract brand signals and{isImage(asset.mime_type) ? ' palette colors.' : ' vocabulary signals.'}
             </p>
           </div>
@@ -1477,6 +1480,7 @@ function AssetsTab() {
           >
             <option value="">All statuses</option>
             <option value="indexed">Indexed</option>
+            <option value="indexing_pending">Indexing incomplete</option>
             <option value="processing">Processing</option>
             <option value="failed">Failed</option>
             <option value="archived">Archived</option>

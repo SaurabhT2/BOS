@@ -126,15 +126,17 @@ describe('GovernancePluginRegistry', () => {
 })
 
 describe('bootstrapGovernancePlugins', () => {
-  it('registers carousel, deck, report validators and repairs', async () => {
+  it('registers carousel, deck, report, and newsletter validators and repairs', async () => {
     await bootstrapGovernancePlugins()
     const caps = GovernancePluginRegistry.listCapabilities()
     expect(caps.validators).toContain('carousel:governance.validate.carousel')
     expect(caps.validators).toContain('deck:governance.validate.deck')
     expect(caps.validators).toContain('report:governance.validate.report')
+    expect(caps.validators).toContain('newsletter:governance.validate.newsletter')
     expect(caps.repairs).toContain('carousel:governance.repair.carousel')
     expect(caps.repairs).toContain('deck:governance.repair.deck')
     expect(caps.repairs).toContain('report:governance.repair.report')
+    expect(caps.repairs).toContain('newsletter:governance.repair.newsletter')
   })
 })
 
