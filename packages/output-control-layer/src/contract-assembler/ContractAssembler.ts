@@ -34,10 +34,6 @@ import { CAROUSEL_STRUCTURAL_CONSTRAINTS } from '@brandos/contracts';
 // contributor produces the same result as before the contract was introduced
 // ---------------------------------------------------------------------------
 
-function defaultIdentity(): IIdentityContribution {
-  return { confidence: 0 };
-}
-
 function defaultPersona(): IPersonaContribution {
   return { tone: 'professional', voice: 'direct' };
 }
@@ -105,10 +101,21 @@ export class ContractAssembler implements IContractAssembler {
     const contract: ResolvedGenerationContract = {
       intent,
       runtime,
-      identity: (raw.identity as IIdentityContribution | null) ?? defaultIdentity(),
       persona: (raw.persona as IPersonaContribution | null) ?? defaultPersona(),
       artifact: (raw.artifact as IArtifactContribution | null) ?? defaultArtifact(),
     };
+
+    // identity is truly optional — same pattern as knowledge below. No
+    // fallback object: absence means IntelligenceOS has no synthesized
+    // identity for this subject yet (hasIdentity=false upstream), which
+    // must render as "no section" in the compiled prompt
+    // (compilePromptFromContract.ts already branches on `if (identity)`),
+    // not a confidence:0 placeholder that reads as present. This mirrors
+    // the field's own `identity?: IIdentityContribution` optional type
+    // ("OPTIONAL SLOTS" in generation-contract.ts) — the type already
+    // declared this contract; ContractAssembler just wasn't honoring it.
+    const identity = raw.identity as IIdentityContribution | null;
+    if (identity) contract.identity = identity;
 
     // skill is truly optional — only attach if contributor produced a value
     const skill = raw.skill as ISkillContribution | null;

@@ -237,7 +237,7 @@ Return ONLY valid JSON.`
 
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id } = await params
-  const { user, workspaceId, unauthorized } = await requireUser()
+  const { workspaceId, unauthorized } = await requireUser()
   if (unauthorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // ── Verify asset exists and belongs to this workspace ─────────────────────
@@ -415,9 +415,20 @@ export async function POST(_req: NextRequest, { params }: Params) {
         if (signalText.trim()) {
           void ingestWorkspaceKnowledgeAsset(
             {
+              // ownerType: 'workspace' means IntelligenceOS's knowledge_assets
+              // row is owned by the workspace, not by this individual user —
+              // userId must stay null here. BrandOS's user.id lives in
+              // BrandOS's own Supabase auth.users, which IntelligenceOS's
+              // knowledge_assets.user_id FK has no way to resolve (there is
+              // no user-provisioning/sync between the two systems). Sending
+              // both workspaceId and userId together violated IntelligenceOS's
+              // owner-consistency invariant (owner_type='workspace' requires
+              // user_id IS NULL) and made every ingest fail with a foreign
+              // key violation, silently, behind an HTTP 201 (see
+              // KnowledgeProcessor.process()'s persist-error handling).
               ownerType: 'workspace',
               workspaceId,
-              userId: user.id,
+              userId: null,
               assetType: knowledgeAssetType,
               title: asset.original_filename ?? asset.name ?? id,
               sourceFileRef: asset.storage_path ?? undefined,
