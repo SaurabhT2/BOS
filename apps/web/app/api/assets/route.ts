@@ -301,9 +301,12 @@ export async function POST(req: NextRequest) {
           .then((rawContent) =>
             ingestWorkspaceKnowledgeAsset(
               {
+                // See apps/web/app/api/assets/[id]/analyze/route.ts for the
+                // full explanation — ownerType: 'workspace' requires userId
+                // to stay null.
                 ownerType: 'workspace',
                 workspaceId,
-                userId: user.id,
+                userId: null,
                 assetType: classifyAssetType(file.name, rawContent),
                 title: file.name,
                 sourceFileRef: storagePath,

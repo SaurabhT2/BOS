@@ -205,9 +205,21 @@ describe('ContractAssemblerFactory', () => {
     expect(contract).toBeDefined();
     expect(contract.intent).toBeDefined();
     expect(contract.runtime).toBeDefined();
-    expect(contract.identity).toBeDefined();
     expect(contract.persona).toBeDefined();
     expect(contract.artifact).toBeDefined();
+    // identity is a truly optional slot (generation-contract.ts's own
+    // "OPTIONAL SLOTS" doc comment) — MINIMAL_CONTRIBUTOR_CONTEXT carries
+    // no cognitionContext, so IdentityContributor correctly returns null
+    // and it's absent here, not defaulted. Coverage for the populated case
+    // lives in cognitionPropagation.test.ts.
+    expect(contract.identity).toBeUndefined();
+  });
+
+  it('populates identity from the real contribution when cognitionContext has one (not a fabricated default)', async () => {
+    const assembler = ContractAssemblerFactory.create({ contributorSet: 'default' });
+    const contract = await assembler.assemble(CONTRIBUTOR_CONTEXT_WITH_BRAND);
+    expect(contract.identity).toBeDefined();
+    expect(contract.identity?.hookStyle).toBe('question');
   });
 
   it('always returns non-null contract', async () => {
@@ -240,9 +252,12 @@ describe('Contract schema validation', () => {
     // Required slots per ResolvedGenerationContract
     expect('intent' in contract).toBe(true);
     expect('runtime' in contract).toBe(true);
-    expect('identity' in contract).toBe(true);
     expect('persona' in contract).toBe(true);
     expect('artifact' in contract).toBe(true);
+    // identity is an OPTIONAL slot (generation-contract.ts) — correctly
+    // absent here since MINIMAL_CONTRIBUTOR_CONTEXT has no cognitionContext
+    // for IdentityContributor to read.
+    expect('identity' in contract).toBe(false);
   });
 
   it('intent.taskType matches context.taskType', async () => {

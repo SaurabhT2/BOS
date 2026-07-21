@@ -122,9 +122,14 @@ export async function POST(req: NextRequest) {
 
         const result = await ingestWorkspaceKnowledgeAsset(
           {
+            // See apps/web/app/api/assets/[id]/analyze/route.ts for the
+            // full explanation — ownerType: 'workspace' requires userId to
+            // stay null; BrandOS's user.id is meaningless to IntelligenceOS
+            // and sending both together violates the owner-consistency
+            // invariant (knowledge_assets_owner_consistency_chk).
             ownerType: 'workspace',
             workspaceId,
-            userId: user!.id,
+            userId: null,
             assetType: classifyAssetType(parsedUrl.toString(), stripped),
             title: parsedUrl.toString(),
             sourceFileRef: parsedUrl.toString(),
