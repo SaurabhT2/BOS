@@ -319,7 +319,7 @@ export async function POST(req: NextRequest) {
             // this deployment (see ingestWorkspaceKnowledgeAsset's
             // docblock) — nothing to wait for, so the asset is genuinely
             // usable now.
-            if (result) await recordAssetIntelligenceSync(assetId, workspaceId, result.assetId)
+            if (result) await recordAssetIntelligenceSync(assetId, workspaceId, result.assetId, result.contribution)
             await updateAssetStatus(
               assetId,
               workspaceId,

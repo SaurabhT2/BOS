@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
           stripped,
         )
         if (result) {
-          await recordAssetIntelligenceSync(assetRow.id, workspaceId, result.assetId)
+          await recordAssetIntelligenceSync(assetRow.id, workspaceId, result.assetId, result.contribution)
         }
       } catch (persistErr) {
         console.error('[extract-from-url] knowledge persistence failed (non-fatal):', persistErr)

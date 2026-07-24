@@ -253,6 +253,31 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'Cannot analyze an archived asset' }, { status: 422 })
   }
 
+  // Knowledge Lifecycle Completion (2026-07-23) — Objective 1/4. 'processing'
+  // means auto-ingestion (apps/web/app/api/assets/route.ts, on upload) or a
+  // previous Analyze call is ACTIVELY running for this exact asset right
+  // now, not merely that it hasn't been looked at yet. Before this guard, a
+  // user who clicked Analyze on a document that was still auto-ingesting
+  // (visible to them only as a Library UI stuck showing "Processing" — see
+  // the Library page's new polling, added in this same change, for the
+  // actual fix to that perception) would fire a second, fully redundant
+  // POST /v1/knowledge/ingest for the same content. Two knowledge assets
+  // extracted from the same document at nearly the same moment is exactly
+  // the thundering-herd shape ProfileBuilder's G-31 fix (intelligenceOS
+  // PR) had to absorb — this guard prevents the redundant work at its
+  // source rather than only surviving it downstream. 'indexing_pending',
+  // 'failed', and 'indexed' are all legitimate retry/reprocess targets and
+  // are not blocked here.
+  if (asset.status === 'processing') {
+    return NextResponse.json(
+      {
+        error: 'This asset is already being processed — ingestion or analysis is actively in progress. Please wait for it to finish before analyzing again.',
+        status: asset.status,
+      },
+      { status: 409 },
+    )
+  }
+
   // Transition to 'processing' immediately so the UI shows the right state
   await updateAssetStatus(id, workspaceId, 'processing')
 
@@ -437,7 +462,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
             asset.intelligence_asset_id ?? undefined,
           )
             .then((result) => {
-              if (result) return recordAssetIntelligenceSync(id, workspaceId, result.assetId)
+              if (result) return recordAssetIntelligenceSync(id, workspaceId, result.assetId, result.contribution)
             })
             .catch((kiErr: unknown) => {
               // Non-fatal: asset analysis already succeeded and was

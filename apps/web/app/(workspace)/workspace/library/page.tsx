@@ -336,15 +336,24 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
           </button>
         </div>
 
-        {/* Brand intelligence contribution — what this asset taught BrandOS */}
-        {asset.vlm_analysis && (
+        {/* Brand intelligence contribution — what this asset taught BrandOS.
+            Historically gated on vlm_analysis alone, which meant this panel
+            never rendered anything for documents — vlm_analysis is VLM
+            (image) output only. Knowledge Lifecycle Completion (2026-07-23)
+            adds the document-side equivalent: knowledge_contribution, the
+            ContributionSummary IntelligenceOS returns from
+            POST /v1/knowledge/ingest (see @brandos/contracts's
+            BrandAssetRow.knowledge_contribution docblock). Purely
+            descriptive — same "how much did this add" concept as VLM
+            confidence above it, not a trust/identity claim. */}
+        {(asset.vlm_analysis || asset.knowledge_contribution) && (
           <div className="mb-6">
             <h3 className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 inline-block" />
               What this {isImage(asset.mime_type) ? 'image' : 'document'} contributed
             </h3>
             <div className="bg-gray-900 rounded p-3 text-xs space-y-2 text-gray-300 border border-gray-800">
-              {(asset.vlm_analysis as any).confidence !== undefined && (
+              {(asset.vlm_analysis as any)?.confidence !== undefined && (
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Analysis confidence</span>
                   <span className={`font-medium ${
@@ -353,13 +362,13 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
                   }`}>{(asset.vlm_analysis as any).confidence}%</span>
                 </div>
               )}
-              {(asset.vlm_analysis as any).description && (
+              {(asset.vlm_analysis as any)?.description && (
                 <p className="text-gray-400 italic">&ldquo;{(asset.vlm_analysis as any).description}&rdquo;</p>
               )}
-              {(asset.vlm_analysis as any).document_type && (
+              {(asset.vlm_analysis as any)?.document_type && (
                 <p><span className="text-gray-500">Document type: </span>{(asset.vlm_analysis as any).document_type}</p>
               )}
-              {(asset.vlm_analysis as any).topics?.length > 0 && (
+              {(asset.vlm_analysis as any)?.topics?.length > 0 && (
                 <div>
                   <p className="text-gray-500 mb-1">Topics identified:</p>
                   <div className="flex flex-wrap gap-1">
@@ -369,10 +378,10 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
                   </div>
                 </div>
               )}
-              {(asset.vlm_analysis as any).mood && (
+              {(asset.vlm_analysis as any)?.mood && (
                 <p><span className="text-gray-500">Visual mood: </span>{(asset.vlm_analysis as any).mood}</p>
               )}
-              {(asset.vlm_analysis as any).colors?.primary?.length > 0 && (
+              {(asset.vlm_analysis as any)?.colors?.primary?.length > 0 && (
                 <div>
                   <p className="text-gray-500 mb-1.5">Colors added to your palette:</p>
                   <div className="flex gap-1.5 mt-1">
@@ -389,6 +398,39 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
                   </div>
                 </div>
               )}
+              {asset.knowledge_contribution && (() => {
+                const c = asset.knowledge_contribution as {
+                  score?: number; isDuplicate?: boolean; noveltyRatio?: number;
+                  termCount?: number; frameworkCount?: number; patternCount?: number;
+                  reasons?: string[];
+                }
+                if (typeof c.score !== 'number') return null
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Contribution to workspace knowledge</span>
+                      <span className={`font-medium ${
+                        c.score >= 70 ? 'text-emerald-400' :
+                        c.score >= 30 ? 'text-amber-400' : 'text-gray-400'
+                      }`}>{c.score}%</span>
+                    </div>
+                    {c.isDuplicate && (
+                      <p className="text-gray-500">Near-duplicate of an existing asset — contributed little new.</p>
+                    )}
+                    {!c.isDuplicate && (c.termCount || c.frameworkCount || c.patternCount) && (
+                      <p className="text-gray-500">
+                        {c.termCount ?? 0} term{c.termCount === 1 ? '' : 's'}
+                        {c.frameworkCount ? `, ${c.frameworkCount} framework${c.frameworkCount === 1 ? '' : 's'}` : ''}
+                        {c.patternCount ? `, ${c.patternCount} pattern${c.patternCount === 1 ? '' : 's'}` : ''} extracted
+                        {typeof c.noveltyRatio === 'number' ? ` (${Math.round(c.noveltyRatio * 100)}% new to this workspace)` : ''}.
+                      </p>
+                    )}
+                    {c.reasons?.[0] && (
+                      <p className="text-[10px] text-gray-600 italic">{c.reasons[0]}</p>
+                    )}
+                  </>
+                )
+              })()}
               <p className="text-[10px] text-gray-600 pt-1 border-t border-gray-800">
                 {isImage(asset.mime_type) ? 'This image feeds' : 'This document feeds'} into your Brand Intelligence → Visual Identity.
                 <button
@@ -403,7 +445,7 @@ function AssetDrawer({ asset, onClose, onUpdated, onArchived }: AssetDrawerProps
         )}
 
         {/* If not yet analyzed, prompt the user */}
-        {!asset.vlm_analysis && (asset.status === 'indexed' || asset.status === 'indexing_pending') && (
+        {!asset.vlm_analysis && !asset.knowledge_contribution && (asset.status === 'indexed' || asset.status === 'indexing_pending') && (
           <div className="mb-6 p-3 rounded-lg bg-gray-900/50 border border-dashed border-gray-700">
             <p className="text-xs text-gray-500">
               {asset.status === 'indexing_pending'
@@ -1400,6 +1442,56 @@ function AssetsTab() {
   }, [mimeFilter, statusFilter])
 
   useEffect(() => { fetchAssets() }, [fetchAssets])
+
+  // Knowledge Lifecycle Completion (2026-07-23), Objective 1/3 — the Library
+  // page previously fetched assets exactly once on mount and never again.
+  // Auto-ingestion (apps/web/app/api/assets/route.ts) resolves 'processing'
+  // to 'indexed'/'indexing_pending' a few seconds AFTER the upload response
+  // already returned, in a fire-and-forget continuation — so with no
+  // polling, a freshly uploaded document sat at "Processing" in this UI
+  // indefinitely until a manual page refresh, which read as "stuck" and is
+  // exactly what trained users to click Analyze on something that was
+  // already auto-ingesting (see analyze/route.ts's new 409 guard for the
+  // other half of that fix).
+  //
+  // Deliberately a plain setInterval poll, not a Supabase realtime
+  // subscription — the smallest change that fixes the actual symptom
+  // (silence while a fire-and-forget continuation is in flight), matching
+  // this component's existing fetch-on-demand architecture rather than
+  // introducing a new data-sync mechanism for one field. Silent (no
+  // `loading` flicker): `fetchAssets()` above is for the initial/manual
+  // load, this is a background refresh.
+  const fetchAssetsSilently = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ limit: '100', mimeCategory: mimeFilter })
+      if (statusFilter) params.set('status', statusFilter)
+      const res = await fetch(`/api/assets?${params}`)
+      const data = await res.json()
+      if (!res.ok) return
+      const nextAssets: BrandAssetRow[] = data.assets ?? []
+      setAssets(nextAssets)
+      setTotal(data.count ?? 0)
+      // Keep the open detail panel in sync too, so "Processing" clears
+      // there without the user having to close and reopen it.
+      setSelected((prev) => {
+        if (!prev) return prev
+        const updated = nextAssets.find((a) => a.id === prev.id)
+        return updated ?? prev
+      })
+    } catch {
+      // Silent by design — a transient poll failure shouldn't surface an
+      // error banner over what might otherwise be a perfectly fine page;
+      // the next tick tries again.
+    }
+  }, [mimeFilter, statusFilter])
+
+  const hasProcessingAssets = assets.some((a) => a.status === 'processing')
+
+  useEffect(() => {
+    if (!hasProcessingAssets) return
+    const interval = setInterval(fetchAssetsSilently, 3000)
+    return () => clearInterval(interval)
+  }, [hasProcessingAssets, fetchAssetsSilently])
 
   // Filtered by search term (client-side)
   const filtered = assets.filter(a =>
