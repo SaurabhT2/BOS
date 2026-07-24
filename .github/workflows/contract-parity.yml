@@ -6,12 +6,24 @@ name: Contract Parity (BrandOS <-> IntelligenceOS)
 # way. See packages/cognition-contract/scripts/check-contract-parity.mjs
 # for what counts as "documented" (contract-parity.allowlist.json).
 #
-# NOTE: <ORG>/intelligence-os below is a placeholder — this workflow could
-# not be wired to a real repository slug from a static code audit;
-# substitute the actual org/repo before enabling. This also assumes a
-# checkout token with read access to the sibling private repository (e.g.
-# a fine-grained PAT stored as a secret), which is an infrastructure/
-# credentials step outside what this program's code changes can provision.
+# 2026-07-24 fix: the repository slug below was a literal placeholder
+# (`<ORG>/intelligence-os`) and the workflow had no fallback for the
+# `INTELLIGENCE_OS_REPO_READ_TOKEN` secret not being provisioned yet —
+# together these caused a hard failure ("Input required and not supplied:
+# token") on every single push to main since this workflow was added on
+# 2026-07-18 (7/7 runs failed; verified via the Actions API before this
+# fix). The repo slug is now correct. The secret is still genuinely not
+# provisioned (an infra/credentials step, not something a code change can
+# do) — rather than keep hard-failing on that missing precondition, the
+# job now checks for the secret first and skips with a clear, actionable
+# notice instead of GitHub Actions' generic "Input required" error.
+#
+# TO ACTUALLY ENABLE THIS CHECK: in this repository's Settings → Secrets
+# and variables → Actions, add a repository secret named
+# INTELLIGENCE_OS_REPO_READ_TOKEN — a fine-grained PAT scoped to
+# read-only Contents access on SaurabhT2/intelligenceOS only. Use a
+# fresh, narrowly-scoped token minted for this specific purpose, not a
+# broad personal-account PAT.
 
 on:
   push:
@@ -24,31 +36,47 @@ jobs:
   parity:
     runs-on: ubuntu-latest
     steps:
+      - name: Check required secret is configured
+        id: preflight
+        run: |
+          if [ -z "${{ secrets.INTELLIGENCE_OS_REPO_READ_TOKEN }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::INTELLIGENCE_OS_REPO_READ_TOKEN is not configured — skipping the contract parity check. See this workflow file's header comment for how to enable it. This is expected until that secret is provisioned; it is not a code defect."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout BrandOS
+        if: steps.preflight.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
           path: brandos
 
       - name: Checkout IntelligenceOS
+        if: steps.preflight.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
-          repository: <ORG>/intelligence-os
+          repository: SaurabhT2/intelligenceOS
           path: intelligence-os
           token: ${{ secrets.INTELLIGENCE_OS_REPO_READ_TOKEN }}
 
       - name: Enable corepack (pnpm)
+        if: steps.preflight.outputs.configured == 'true'
         run: corepack enable
 
       - name: Set up Node.js
+        if: steps.preflight.outputs.configured == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
       - name: Install BrandOS's cognition-contract deps
+        if: steps.preflight.outputs.configured == 'true'
         working-directory: brandos/packages/cognition-contract
         run: pnpm install --frozen-lockfile
 
       - name: Run parity check
+        if: steps.preflight.outputs.configured == 'true'
         working-directory: brandos/packages/cognition-contract
         env:
           SIBLING_CONTRACT_SRC: ${{ github.workspace }}/intelligence-os/packages/cognition-contract/src
