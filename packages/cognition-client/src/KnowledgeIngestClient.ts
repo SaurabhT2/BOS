@@ -108,7 +108,7 @@ export class KnowledgeIngestClient {
     asset: KnowledgeAssetIngestInput,
     rawContent?: string,
     existingAssetId?: string,
-  ): Promise<{ assetId: string }> {
+  ): Promise<{ assetId: string; contribution: Record<string, unknown> | null }> {
     const attempt = () => this._attempt(asset, rawContent, existingAssetId)
     return existingAssetId
       ? withRetry(attempt, KNOWLEDGE_INGEST_RETRY_OPTIONS)
@@ -119,7 +119,7 @@ export class KnowledgeIngestClient {
     asset: KnowledgeAssetIngestInput,
     rawContent: string | undefined,
     existingAssetId: string | undefined,
-  ): Promise<{ assetId: string }> {
+  ): Promise<{ assetId: string; contribution: Record<string, unknown> | null }> {
     const controller = new AbortController()
     const timeout = setTimeout(
       () => controller.abort(),
@@ -141,7 +141,12 @@ export class KnowledgeIngestClient {
         throw new Error(`IntelligenceOS API POST /v1/knowledge/ingest returned ${res.status}`)
       }
 
-      return (await res.json()) as { assetId: string }
+      // `contribution` is additive on the IntelligenceOS side (Knowledge
+      // Lifecycle Completion, 2026-07-23) — older server deployments this
+      // client might still talk to simply won't include the key, hence
+      // the `?? null` rather than assuming its presence.
+      const body = (await res.json()) as { assetId: string; contribution?: Record<string, unknown> | null }
+      return { assetId: body.assetId, contribution: body.contribution ?? null }
     } finally {
       clearTimeout(timeout)
     }

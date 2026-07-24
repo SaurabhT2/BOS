@@ -744,6 +744,22 @@ export interface BrandAssetRow {
    * duplicate every time a user re-analyzes the same file.
    */
   intelligence_asset_id?: string | null;
+
+  /**
+   * Knowledge Lifecycle Completion (2026-07-23). The `contribution` field
+   * IntelligenceOS's `POST /v1/knowledge/ingest` response returns
+   * (`ContributionSummary` — see `@brandos/cognition-client`'s
+   * `KnowledgeIngestClient`), copied here verbatim so the Library UI can
+   * render "how much did this document add" without a round-trip to
+   * IntelligenceOS on every page load. Null until ingested, if ingestion
+   * was skipped/failed, or for images (contribution scoring is specific
+   * to the Knowledge Pipeline's text-extraction path — VLM analysis for
+   * images has its own `confidence` field on `vlm_analysis`, a different
+   * concept). Shape: `{ score, isDuplicate, duplicateAssetId,
+   * noveltyRatio, corroborationScore, termCount, frameworkCount,
+   * patternCount, reasons }`.
+   */
+  knowledge_contribution?: Record<string, unknown> | null;
 }
 
 /**

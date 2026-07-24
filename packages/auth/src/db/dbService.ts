@@ -1036,16 +1036,33 @@ export function resolveDocumentIndexStatus(outcome: DocumentIngestOutcome): Bran
  * this is a system-internal correlation write, not a user edit. Mirrors
  * updateAssetStatus()'s shape. Scoped to workspaceId, same as every other
  * asset write in this file.
+ *
+ * Knowledge Lifecycle Completion (2026-07-23) — `contribution` is an
+ * optional 4th param, additive for the same reason
+ * `KnowledgeIngestClient.ingestKnowledgeAsset()`'s return type grew a
+ * field rather than a new client method: every existing caller (there are
+ * 3 — apps/web/app/api/assets/route.ts, .../[id]/analyze/route.ts,
+ * apps/web/app/api/extract-from-url/route.ts) keeps compiling, and the
+ * ones updated in this change simply now also pass through
+ * `result.contribution` in the same single write instead of a second
+ * round trip.
  */
 export async function recordAssetIntelligenceSync(
   assetId: string,
   workspaceId: string,
-  intelligenceAssetId: string
+  intelligenceAssetId: string,
+  contribution?: Record<string, unknown> | null
 ): Promise<DbResult<BrandAssetRow>> {
   // Uses admin client — see createAsset() comment.
+  const updates: Record<string, unknown> = {
+    intelligence_asset_id: intelligenceAssetId,
+    updated_at: new Date().toISOString(),
+  };
+  if (contribution !== undefined) updates['knowledge_contribution'] = contribution;
+
   const { data, error } = await getSupabaseAdmin()
     .from(T.brand_assets)
-    .update({ intelligence_asset_id: intelligenceAssetId, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq('id', assetId)
     .eq('workspace_id', workspaceId)  // CRITICAL: workspace isolation
     .select()

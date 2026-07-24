@@ -49,10 +49,23 @@ describe('KnowledgeIngestClient', () => {
 
     const result = await client.ingestKnowledgeAsset(ASSET, 'raw content')
 
-    expect(result).toEqual({ assetId: 'asset-1' })
+    // contribution defaults to null when the server response doesn't
+    // include it — Knowledge Lifecycle Completion (2026-07-23) added this
+    // field additively, so an older/degraded IntelligenceOS deployment
+    // omitting it must not break this client.
+    expect(result).toEqual({ assetId: 'asset-1', contribution: null })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe(`${BASE_URL}/v1/knowledge/ingest`)
     expect(JSON.parse(init.body)).toEqual({ asset: ASSET, rawContent: 'raw content', existingAssetId: undefined })
+  })
+
+  it('passes contribution through unchanged when the server response includes it', async () => {
+    const contribution = { score: 82, isDuplicate: false, termCount: 40 }
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { assetId: 'asset-1', contribution }))
+
+    const result = await client.ingestKnowledgeAsset(ASSET, 'raw content')
+
+    expect(result).toEqual({ assetId: 'asset-1', contribution })
   })
 
   describe('first ingest (no existingAssetId) — NOT retried', () => {
@@ -72,7 +85,7 @@ describe('KnowledgeIngestClient', () => {
 
       const result = await client.ingestKnowledgeAsset(ASSET, 'raw content', 'asset-1')
 
-      expect(result).toEqual({ assetId: 'asset-1' })
+      expect(result).toEqual({ assetId: 'asset-1', contribution: null })
       expect(fetchMock).toHaveBeenCalledTimes(2)
     })
 

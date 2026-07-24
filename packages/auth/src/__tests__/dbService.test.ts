@@ -76,10 +76,11 @@ vi.mock('../auth/supabaseClient', () => ({
 vi.mock('../config', () => ({
   dbConfig: {
     tables: {
-      users:     'users',
-      campaigns: 'campaigns',
-      personas:  'personas',
-      feedback:  'feedback',
+      users:        'users',
+      campaigns:    'campaigns',
+      personas:     'personas',
+      feedback:     'feedback',
+      brand_assets: 'brand_assets',
     },
   },
 }));
@@ -105,6 +106,7 @@ import {
   getFeedbackForCampaign,
   getUserFeedbackStats,
   resolveDocumentIndexStatus,
+  recordAssetIntelligenceSync,
 } from '../db/dbService';
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
@@ -466,6 +468,65 @@ describe('resolveDocumentIndexStatus', () => {
   it("returns 'indexing_pending' (never 'indexed') when the ingest attempt failed or timed out", () => {
     expect(resolveDocumentIndexStatus('failed')).toBe('indexing_pending');
     expect(resolveDocumentIndexStatus('failed')).not.toBe('indexed');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// KNOWLEDGE CONTRIBUTION (2026-07-23)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('recordAssetIntelligenceSync', () => {
+  it('writes intelligence_asset_id only when contribution is not supplied (back-compat call shape)', async () => {
+    mockSingle.mockResolvedValue({ data: { id: 'asset-1', intelligence_asset_id: 'kia-1' }, error: null });
+
+    const { error } = await recordAssetIntelligenceSync('asset-1', 'ws-1', 'kia-1');
+
+    expect(error).toBeNull();
+    expect(mockFrom).toHaveBeenCalledWith('brand_assets');
+    const updatePayload = mockUpdate.mock.calls[0][0];
+    expect(updatePayload.intelligence_asset_id).toBe('kia-1');
+    expect(updatePayload).not.toHaveProperty('knowledge_contribution');
+  });
+
+  it('writes knowledge_contribution alongside intelligence_asset_id in the same update when supplied', async () => {
+    mockSingle.mockResolvedValue({ data: { id: 'asset-1' }, error: null });
+    const contribution = { score: 64, isDuplicate: false, termCount: 30 };
+
+    const { error } = await recordAssetIntelligenceSync('asset-1', 'ws-1', 'kia-1', contribution);
+
+    expect(error).toBeNull();
+    const updatePayload = mockUpdate.mock.calls[0][0];
+    expect(updatePayload.intelligence_asset_id).toBe('kia-1');
+    expect(updatePayload.knowledge_contribution).toEqual(contribution);
+    // A single .update() call, not a second round trip.
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes knowledge_contribution: null when contribution is explicitly null (contribution scoring failed non-fatally)', async () => {
+    mockSingle.mockResolvedValue({ data: { id: 'asset-1' }, error: null });
+
+    await recordAssetIntelligenceSync('asset-1', 'ws-1', 'kia-1', null);
+
+    const updatePayload = mockUpdate.mock.calls[0][0];
+    expect(updatePayload.knowledge_contribution).toBeNull();
+  });
+
+  it('scopes the update to both assetId and workspaceId (workspace isolation)', async () => {
+    mockSingle.mockResolvedValue({ data: { id: 'asset-1' }, error: null });
+
+    await recordAssetIntelligenceSync('asset-1', 'ws-1', 'kia-1');
+
+    expect(mockEq).toHaveBeenCalledWith('id', 'asset-1');
+    expect(mockEq).toHaveBeenCalledWith('workspace_id', 'ws-1');
+  });
+
+  it("returns 'Asset not found' on PGRST116", async () => {
+    mockSingle.mockResolvedValue({ data: null, error: { code: 'PGRST116', message: 'no rows' } });
+
+    const { data, error } = await recordAssetIntelligenceSync('missing', 'ws-1', 'kia-1');
+
+    expect(data).toBeNull();
+    expect(error).toBe('Asset not found');
   });
 });
 
