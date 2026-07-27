@@ -43,6 +43,37 @@ interface AuditResponse {
 
 const PAGE_SIZE = 20
 
+// ─── Plain-language violation reasons (UX doc §12 High #5, §13 "For 5") ───
+// Translates governanceEngine.ts's PolicyViolationType union into the
+// language a non-technical compliance reviewer would actually want. This is
+// the complete set of codes the engine emits (see governanceEngine.ts) —
+// if a new code is ever added there, add its translation here too.
+const VIOLATION_LABELS: Record<string, string> = {
+  weak_hook: 'needed a stronger opening line',
+  cliche_density: 'relied on familiar phrasing',
+  score_below_threshold: 'scored below the quality threshold',
+}
+
+function translateViolation(code: string): string {
+  return VIOLATION_LABELS[code] ?? code.replace(/_/g, ' ')
+}
+
+// Narrates an entry the way Library's version history already does
+// successfully ("BrandOS automatically improved it") — extended here per
+// §17.7 "consistent narration for automated repair/quality events."
+function narrateEntry(e: AuditEntry): string {
+  const reasons = e.violations.map(translateViolation)
+  const reasonText = reasons.length > 0 ? ` — ${reasons.join('; ')}` : ''
+
+  if (!e.passed) {
+    return `Flagged for review${reasonText}.`
+  }
+  if (e.repaired && e.repairAttempts > 0) {
+    return `Needed ${e.repairAttempts} revision${e.repairAttempts === 1 ? '' : 's'}${reasonText} — then passed.`
+  }
+  return 'Passed on the first try.'
+}
+
 export default function WorkspaceGovernanceAuditPage() {
   const router = useRouter()
   const [offset, setOffset] = useState(0)
@@ -157,28 +188,7 @@ export default function WorkspaceGovernanceAuditPage() {
             ) : (
               <div className="rounded-xl border border-gray-800 divide-y divide-gray-800 overflow-hidden">
                 {data.entries.map((e, i) => (
-                  <div key={`${e.requestId}-${i}`} className="flex items-start gap-3 px-4 py-3">
-                    <div
-                      className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                        e.passed ? 'bg-emerald-400' : 'bg-red-400'
-                      }`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-gray-200 capitalize">{e.artifactType}</span>
-                        <span className="text-xs text-gray-500">score {e.score}</span>
-                        {e.repaired && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-blue-950 text-blue-300">
-                            repaired ×{e.repairAttempts}
-                          </span>
-                        )}
-                      </div>
-                      {e.violations.length > 0 && (
-                        <p className="text-xs text-red-400 mt-1">{e.violations.join(', ')}</p>
-                      )}
-                      <p className="text-xs text-gray-600 mt-1">{new Date(e.timestamp).toLocaleString()}</p>
-                    </div>
-                  </div>
+                  <AuditRow key={`${e.requestId}-${i}`} entry={e} />
                 ))}
               </div>
             )}
@@ -214,6 +224,46 @@ function StatTile({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
       <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{label}</p>
       <p className="text-xl font-bold tabular-nums">{value}</p>
+    </div>
+  )
+}
+
+function AuditRow({ entry: e }: { entry: AuditEntry }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-start gap-3">
+        <div
+          className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+            e.passed ? 'bg-emerald-400' : 'bg-red-400'
+          }`}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-gray-200 capitalize">{e.artifactType}</span>
+            <span className="text-xs text-gray-500">{new Date(e.timestamp).toLocaleString()}</span>
+          </div>
+          {/* Plain-language narration is the primary statement — matches
+              Library's version-history pattern. Raw score/codes are
+              available on request just below, never shown here first. */}
+          <p className="text-xs text-gray-300 mt-1">{narrateEntry(e)}</p>
+          <button
+            onClick={() => setOpen(o => !o)}
+            aria-expanded={open}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors mt-1"
+          >
+            {open ? '− Hide technical detail' : '+ View technical detail'}
+          </button>
+          {open && (
+            <div className="mt-2 rounded-lg bg-gray-950 border border-gray-800 px-3 py-2 text-xs text-gray-500 space-y-1 font-mono">
+              <div>score: {e.score}</div>
+              <div>repair_attempts: {e.repairAttempts}</div>
+              <div>violations: {e.violations.length > 0 ? e.violations.join(', ') : 'none'}</div>
+              <div>request_id: {e.requestId}</div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
