@@ -128,6 +128,15 @@ function CreatePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
+  // UX Redesign §7 Journey A / Medium #7, §13 "For 7": onboarding hands off
+  // into this same Create screen (see onboarding/page.tsx's
+  // `router.push('/workspace/create?onboarding=1')`). A brand-new user's
+  // very first generation should show zero advanced controls — not even a
+  // collapsed disclosure — reinforcing onboarding's already-calm, guided
+  // tone instead of introducing "there's a technical panel here" on the
+  // first successful output.
+  const isOnboardingFirstRun = searchParams.get('onboarding') === '1'
+
   // ── Wizard state ───────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>('what')
   const [campaignMode, setCampaignMode] = useState(false)
@@ -643,6 +652,31 @@ function CreatePageInner() {
       ? outputResult.control_plane as ControlPlaneData
       : null
 
+  // ── Plain-language status line (UX Redesign §13 "For 1 & 2", §15) ─────────
+  // Replaces the persistent technical rail's badges with a single sentence,
+  // matching the narration style already used in Library's version history.
+  // Falls back to cpData from campaign/carousel/etc. results when the
+  // free-text `outputResult` path has no control_plane data of its own.
+  const statusLineCpData: ControlPlaneData | null =
+    cpData
+    ?? (carouselResult && 'control_plane' in carouselResult ? (carouselResult as any).control_plane as ControlPlaneData : null)
+    ?? (deckResult && 'control_plane' in deckResult ? (deckResult as any).control_plane as ControlPlaneData : null)
+    ?? (reportResult && 'control_plane' in reportResult ? (reportResult as any).control_plane as ControlPlaneData : null)
+    ?? (newsletterResult && 'control_plane' in newsletterResult ? (newsletterResult as any).control_plane as ControlPlaneData : null)
+    ?? null
+
+  function qualityStatusLine(cp: ControlPlaneData | null): string {
+    if (!cp) return 'Checked against your brand guidelines.'
+    const score = cp.final_score ?? cp.original_score
+    const retries = cp.retries ?? 0
+    if (score == null) return 'Checked against your brand guidelines.'
+    if (retries > 0) {
+      return `Checked against your brand guidelines — BrandOS revised this ${retries} time${retries === 1 ? '' : 's'} before passing.`
+    }
+    if (score >= 75) return 'Checked against your brand guidelines — passed on the first try.'
+    return 'Checked against your brand guidelines — flagged for your review.'
+  }
+
   const FORMAT_OPTIONS = [
     { label: 'Post',       icon: FileText,     color: 'from-blue-600 to-blue-700',     format: 'linkedin_post', type: 'post'       },
     { label: 'Carousel',   icon: LayoutGrid,   color: 'from-cyan-600 to-teal-700',     format: 'carousel',      type: 'carousel'   },
@@ -668,14 +702,23 @@ function CreatePageInner() {
     setStep(target)
   }
 
-  // ── Shared export toolbar (unchanged) ─────────────────────────────────────
+  // ── Shared export toolbar (redesigned per UX doc §12 High #4 / §13 "For 4") ─
+  //
+  // Previously: six equal-weight, icon-only buttons (JSON, HTML, PDF, PPTX,
+  // Canva, Figma) with no default, forcing a full evaluation of six options
+  // every time. Now: one primary export action defaulted to the most
+  // sensible format for the artifact type, a labeled "More export options"
+  // control for everything else, and JSON reframed as a separated
+  // "Developer format" — every format still fully available, none removed.
   function ExportToolbar({
-    icon: Icon, iconClass, title, subtitle, onCopy, onExportJson, onExportHtml, onExportPdf, onExportPptx, onExportCanva, onExportFigma,
+    icon: Icon, iconClass, title, subtitle, artifactKind,
+    onCopy, onExportJson, onExportHtml, onExportPdf, onExportPptx, onExportCanva, onExportFigma,
   }: {
     icon: React.ComponentType<{ className?: string }>
     iconClass: string
     title: string
     subtitle?: string
+    artifactKind: 'carousel' | 'deck' | 'report' | 'newsletter'
     onCopy: () => void
     onExportJson: () => void
     onExportHtml: () => void
@@ -684,51 +727,90 @@ function CreatePageInner() {
     onExportCanva: () => void
     onExportFigma: () => void
   }) {
+    const [moreOpen, setMoreOpen] = useState(false)
+
+    // Recommended default per artifact type — the format most people reach
+    // for, so the primary action is a single confident click, not a menu.
+    const PRIMARY: Record<typeof artifactKind, { label: string; run: () => void; format: string }> = {
+      carousel:   { label: 'Save & Export PDF',        run: onExportPdf,  format: 'pdf'  },
+      deck:       { label: 'Save & Export PowerPoint',  run: onExportPptx, format: 'pptx' },
+      report:     { label: 'Save & Export PDF',         run: onExportPdf,  format: 'pdf'  },
+      newsletter: { label: 'Save & Export HTML',        run: onExportHtml, format: 'html' },
+    }
+    const primary = PRIMARY[artifactKind]
+
+    const secondaryFormats: Array<{ id: string; label: string; run: () => void }> = [
+      { id: 'html',  label: 'HTML',            run: onExportHtml },
+      { id: 'pdf',   label: 'PDF',              run: onExportPdf },
+      { id: 'pptx',  label: 'PowerPoint',       run: onExportPptx },
+      { id: 'canva', label: 'Open in Canva',    run: onExportCanva },
+      { id: 'figma', label: 'Figma import code', run: onExportFigma },
+    ].filter(f => f.id !== primary.format)
+
     return (
-      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-3 mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Icon className={`w-4 h-4 flex-shrink-0 ${iconClass}`} />
-          <span className="text-sm font-semibold text-gray-200">{title}</span>
-          {subtitle && <span className="text-xs text-gray-500">{subtitle}</span>}
-          <span className="text-xs px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-700/40 rounded-full flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> ISkill validated
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={onCopy} title="Copy JSON"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-all">
-            <Copy className="w-3 h-3" />Copy
-          </button>
-          <button onClick={onExportJson} disabled={exportingFormat !== null} title="Download JSON"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 border border-gray-700 rounded-lg text-xs text-gray-400 hover:text-cyan-400 transition-all">
-            {exportingFormat === 'json' ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-            JSON
-          </button>
-          <button onClick={onExportHtml} disabled={exportingFormat !== null} title="Download HTML"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-cyan-900/40 hover:bg-cyan-900/70 disabled:opacity-50 border border-cyan-700/50 rounded-lg text-xs text-cyan-400 hover:text-cyan-200 transition-all">
-            {exportingFormat === 'html' ? <Loader className="w-3 h-3 animate-spin" /> : <ArrowDownToLine className="w-3 h-3" />}
-            HTML
-          </button>
-          <button onClick={onExportPdf} disabled={exportingFormat !== null} title="Download PDF"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-900/40 hover:bg-rose-900/70 disabled:opacity-50 border border-rose-700/50 rounded-lg text-xs text-rose-300 hover:text-rose-100 transition-all">
-            {exportingFormat === 'pdf' ? <Loader className="w-3 h-3 animate-spin" /> : <ArrowDownToLine className="w-3 h-3" />}
-            PDF
-          </button>
-          <button onClick={onExportPptx} disabled={exportingFormat !== null} title="Download PowerPoint"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-900/40 hover:bg-orange-900/70 disabled:opacity-50 border border-orange-700/50 rounded-lg text-xs text-orange-300 hover:text-orange-100 transition-all">
-            {exportingFormat === 'pptx' ? <Loader className="w-3 h-3 animate-spin" /> : <ArrowDownToLine className="w-3 h-3" />}
-            PPTX
-          </button>
-          <button onClick={onExportCanva} disabled={exportingFormat !== null} title="Open in Canva"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-teal-900/40 hover:bg-teal-900/70 disabled:opacity-50 border border-teal-700/50 rounded-lg text-xs text-teal-300 hover:text-teal-100 transition-all">
-            <ArrowDownToLine className="w-3 h-3" />
-            Canva
-          </button>
-          <button onClick={onExportFigma} disabled={exportingFormat !== null} title="Get a Figma import code"
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-900/40 hover:bg-purple-900/70 disabled:opacity-50 border border-purple-700/50 rounded-lg text-xs text-purple-300 hover:text-purple-100 transition-all">
-            <ArrowDownToLine className="w-3 h-3" />
-            Figma
-          </button>
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-3 mb-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Icon className={`w-4 h-4 flex-shrink-0 ${iconClass}`} />
+            <span className="text-sm font-semibold text-gray-200">{title}</span>
+            {subtitle && <span className="text-xs text-gray-500">{subtitle}</span>}
+            <span className="text-xs px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-700/40 rounded-full flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> ISkill validated
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0 relative">
+            <button onClick={onCopy} title="Copy JSON"
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-all">
+              <Copy className="w-3 h-3" />Copy
+            </button>
+
+            {/* Primary export action */}
+            <button
+              onClick={primary.run}
+              disabled={exportingFormat !== null}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-xs font-semibold text-white transition-all"
+            >
+              {exportingFormat === primary.format ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <ArrowDownToLine className="w-3.5 h-3.5" />}
+              {primary.label}
+            </button>
+
+            {/* Secondary: everything else, collapsed under a labeled control */}
+            <button
+              onClick={() => setMoreOpen(o => !o)}
+              aria-expanded={moreOpen}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-300 transition-all"
+            >
+              More export options
+              {moreOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+
+            {moreOpen && (
+              <div className="absolute top-full right-0 mt-1 w-56 bg-gray-900 border border-gray-700 rounded-xl shadow-xl z-50 py-1">
+                {secondaryFormats.map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => { f.run(); setMoreOpen(false) }}
+                    disabled={exportingFormat !== null}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-white/5 text-left disabled:opacity-50"
+                  >
+                    {exportingFormat === f.id ? <Loader className="w-3 h-3 animate-spin" /> : <ArrowDownToLine className="w-3 h-3 text-gray-500" />}
+                    {f.label}
+                  </button>
+                ))}
+                <div className="my-1 border-t border-gray-800" />
+                <button
+                  onClick={() => { onExportJson(); setMoreOpen(false) }}
+                  disabled={exportingFormat !== null}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:bg-white/5 text-left disabled:opacity-50"
+                  title="Raw artifact data — for developers integrating with the API"
+                >
+                  {exportingFormat === 'json' ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                  Developer format (JSON)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -1185,7 +1267,7 @@ function CreatePageInner() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-5">
+          <div className={`space-y-5 ${(step === 'preview' || step === 'save') && !isOnboardingFirstRun ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
 
             {/* ════════ STEP 1: WHAT ════════════════════════════════════════ */}
             {step === 'what' && (
@@ -1206,6 +1288,18 @@ function CreatePageInner() {
                     Campaign mode
                   </button>
                 </div>
+
+                {/* State-describing line for the toggle above — matches the
+                    "Apply Brand Memory" reference pattern (§17.2): every
+                    binary control should say, in plain language, what
+                    turning it on/off actually does, not just change color. */}
+                {!campaignTierLocked && (
+                  <p className="text-xs text-gray-500 -mt-3">
+                    {campaignMode
+                      ? '— on: one brief generates every format you select below, together'
+                      : '— off: create a single piece of content'}
+                  </p>
+                )}
 
                 {!campaignMode ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -1408,6 +1502,7 @@ function CreatePageInner() {
                   <section>
                     <ExportToolbar
                       icon={LayoutGrid} iconClass="text-cyan-400"
+                      artifactKind="carousel"
                       title={carouselResult.title ?? 'Carousel Blueprint'}
                       subtitle={`${carouselResult.slides?.length ?? 0} slides`}
                       onCopy={() => copyJSON(carouselResult)}
@@ -1426,6 +1521,7 @@ function CreatePageInner() {
                   <section>
                     <ExportToolbar
                       icon={Presentation} iconClass="text-indigo-400"
+                      artifactKind="deck"
                       title={deckResult.title ?? 'Deck'}
                       subtitle={`${deckResult.slides?.length ?? 0} slides`}
                       onCopy={() => copyJSON(deckResult)}
@@ -1444,6 +1540,7 @@ function CreatePageInner() {
                   <section>
                     <ExportToolbar
                       icon={BookOpen} iconClass="text-emerald-400"
+                      artifactKind="report"
                       title={reportResult.title ?? 'Report'}
                       subtitle={`${reportResult.sections?.length ?? 0} sections`}
                       onCopy={() => copyJSON(reportResult)}
@@ -1462,6 +1559,7 @@ function CreatePageInner() {
                   <section>
                     <ExportToolbar
                       icon={Mail} iconClass="text-blue-400"
+                      artifactKind="newsletter"
                       title={newsletterResult.subject_line ?? newsletterResult.title ?? 'Newsletter'}
                       subtitle={`${newsletterResult.sections?.length ?? 0} sections`}
                       onCopy={() => copyJSON(newsletterResult)}
@@ -1502,6 +1600,16 @@ function CreatePageInner() {
                       </pre>
                     </div>
                   </section>
+                )}
+
+                {/* Plain-language status line — the primary trust signal on this
+                    screen (UX Redesign §13, §15). Replaces the old persistent
+                    Control Plane rail's score/retry badges with one sentence. */}
+                {!anyLoading && hasResult && (
+                  <div className="flex items-center gap-2 px-4 py-3 bg-emerald-950/20 border border-emerald-800/30 rounded-xl text-sm text-emerald-300">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>{qualityStatusLine(statusLineCpData)}</span>
+                  </div>
                 )}
 
                 {/* P3.28 — "Why this?" explainability panel.
@@ -1575,58 +1683,103 @@ function CreatePageInner() {
             )}
           </div>
 
-          {/* ── Right column: Control Plane (unchanged) ──────────────────── */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <RuntimeModeSelector
-                value={mode}
-                onChange={changeMode}
-                disabled={anyLoading || availLoading}
-                modeStatuses={modeStatuses}
-                recommendedMode={recommendedMode}
-                autoSelect={true}
-              />
-            </div>
-
-            {/* Phase 7 — Model selection: wired to selectedModel state, which is
-                forwarded as the `model` field in the generate body (Phase 4 path). */}
-            <ModelSelector
-              variant="compact"
-              activeTier={mode}
-              onTierChange={(tier) => changeMode(tier)}
-              onModelChange={(modelId) => setSelectedModel(modelId)}
-            />
-
-            <ControlPlanePanel
-              cpData={cpData}
-              isLoading={anyLoading}
-              overrideMode={overrideMode}
-              onModeChange={changeOverrideMode}
-              streamingLog={streamingLog}
-            />
-
-            {outputResult && (
-              <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <Sparkles className="w-3 h-3" /> Session Stats
+          {/* ── Right column: Advanced (on-demand, Preview/Save only) ──────
+              UX Redesign §12 Critical #1 & #2: this rail was previously
+              persistent and expanded on every step, for every user, on
+              every generation — the single largest source of "engineering
+              tool" feel in the product, and the surface where a one-click
+              governance bypass sat as a peer of ordinary presets. Nothing
+              here is removed: runtime mode, model selection, quality level,
+              and session stats are all the same underlying controls,
+              relocated from "always on" to "opt-in, and only where the
+              decision is relevant" (Preview/Save, not What/About). See
+              also ControlPlanePanel.tsx, which now defaults to collapsed
+              and no longer offers "Raw Mode — bypass governance" as a
+              selectable option. */}
+          {(step === 'preview' || step === 'save') && !isOnboardingFirstRun && (
+            <div className="space-y-4">
+              <AdvancedControlsDisclosure>
+                <div className="flex items-center justify-between">
+                  <RuntimeModeSelector
+                    value={mode}
+                    onChange={changeMode}
+                    disabled={anyLoading || availLoading}
+                    modeStatuses={modeStatuses}
+                    recommendedMode={recommendedMode}
+                    autoSelect={true}
+                  />
                 </div>
-                <div className="space-y-2 text-xs">
-                  {[
-                    { label: 'Artifact', value: outputResult.title ?? '—' },
-                    { label: 'Audience', value: outputResult.audience?.label ?? '—' },
-                    { label: 'Tone',     value: activeTone },
-                  ].map(row => (
-                    <div key={row.label} className="flex justify-between">
-                      <span className="text-gray-600">{row.label}</span>
-                      <span className="text-gray-300 font-mono">{String(row.value)}</span>
+
+                {/* Phase 7 — Model selection: wired to selectedModel state, which is
+                    forwarded as the `model` field in the generate body (Phase 4 path). */}
+                <ModelSelector
+                  variant="compact"
+                  activeTier={mode}
+                  onTierChange={(tier) => changeMode(tier)}
+                  onModelChange={(modelId) => setSelectedModel(modelId)}
+                />
+
+                <ControlPlanePanel
+                  cpData={cpData}
+                  isLoading={anyLoading}
+                  overrideMode={overrideMode}
+                  onModeChange={changeOverrideMode}
+                  streamingLog={streamingLog}
+                />
+
+                {outputResult && (
+                  <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Sparkles className="w-3 h-3" /> Session details
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+                    <div className="space-y-2 text-xs">
+                      {[
+                        { label: 'Artifact', value: outputResult.title ?? '—' },
+                        { label: 'Audience', value: outputResult.audience?.label ?? '—' },
+                        { label: 'Tone',     value: activeTone },
+                      ].map(row => (
+                        <div key={row.label} className="flex justify-between">
+                          <span className="text-gray-600">{row.label}</span>
+                          <span className="text-gray-300 font-mono">{String(row.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </AdvancedControlsDisclosure>
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Advanced disclosure wrapper (UX Redesign §13, §15, §17.1) ────────────────
+// Collapsed by default. Houses runtime mode, model selection, quality level,
+// and session details — every control that was previously permanent, none of
+// it removed. A rare user who wants this can open it in one click; everyone
+// else never sees it.
+function AdvancedControlsDisclosure({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/40">
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-800/30 rounded-xl transition-colors"
+      >
+        <span className="text-xs font-medium text-gray-400">Advanced</span>
+        <span className="text-xs text-gray-600">— writing engine, quality level & session details</span>
+        {open
+          ? <ChevronUp className="w-3.5 h-3.5 text-gray-600 ml-auto" />
+          : <ChevronDown className="w-3.5 h-3.5 text-gray-600 ml-auto" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t border-gray-800 pt-3">
+          {children}
+        </div>
+      )}
     </div>
   )
 }
