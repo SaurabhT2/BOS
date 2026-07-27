@@ -862,14 +862,14 @@ function VersionHistorySection({ campaignId, scoreAfter }: { campaignId: string;
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-gray-800/60">
           <span className="font-medium text-gray-300">v1 — Generated</span>
+          {/* Numeric score demoted to a small secondary annotation — the
+              narrated sentence below is the primary statement (§13 "For 12"). */}
           {scoreAfter != null && (
-            <span className={`font-medium ${scoreAfter >= 70 ? 'text-emerald-400' : scoreAfter >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
-              Score: {scoreAfter}
-            </span>
+            <span className="text-[11px] text-gray-500">{scoreAfter}/100</span>
           )}
         </div>
         <p className="text-xs text-gray-600 pt-1">
-          Single version — no governance repairs were needed.
+          Passed on the first try — no revisions were needed.
         </p>
       </div>
     )
