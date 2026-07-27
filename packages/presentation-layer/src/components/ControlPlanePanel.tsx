@@ -25,20 +25,28 @@ export interface ControlPlanePanelProps {
   streamingLog?:  string[]
 }
 
-// ─── Override Mode Config ─────────────────────────────────────────────────────
-
+// ─── Quality Level Config ──────────────────────────────────────────────────────
+//
+// User-facing quality-level presets. Per the BrandOS UX Redesign (Section 8
+// glossary + Section 12, Critical #1), "Raw Mode — bypass governance" is
+// intentionally NOT included here: a one-click, peer-weighted option to
+// disable quality/brand-safety checking is a trust and compliance risk, not
+// just a UX one. The underlying 'raw' value still exists in @brandos/contracts
+// OverrideMode for legitimate internal/QA use (see apps/web/app/api/admin/
+// iskill-test/route.ts) — it is relocated to that admin-only surface rather
+// than deleted, consistent with "technical truth is never hidden, only
+// deferred" (Section 18). It must never be re-added to this list.
 const OVERRIDE_MODES: Array<{
   id: OverrideMode
   label: string
   desc: string
   color: string
 }> = [
-  { id: 'standard',   label: 'Standard',      desc: 'Full governance',     color: '#3b82f6' },
-  { id: 'strict',     label: 'Strict',         desc: 'Max quality gates',   color: '#8b5cf6' },
-  { id: 'fast',       label: 'Fast',           desc: 'Minimal checks',      color: '#f59e0b' },
-  { id: 'cost_saver', label: 'Cost Saver',     desc: 'Prefer local/free',   color: '#10b981' },
-  { id: 'premium',    label: 'Premium',        desc: 'Best model always',   color: '#ec4899' },
-  { id: 'raw',        label: 'Raw Mode',       desc: 'Bypass governance',   color: '#6b7280' },
+  { id: 'standard',   label: 'Balanced',   desc: 'Full quality check — the everyday default',        color: '#3b82f6' },
+  { id: 'strict',     label: 'Thorough',   desc: 'Extra scrutiny before content is shown to you',     color: '#8b5cf6' },
+  { id: 'fast',       label: 'Quick',      desc: 'Lighter checks, faster turnaround',                 color: '#f59e0b' },
+  { id: 'cost_saver', label: 'Cost Saver', desc: 'Prefers lower-cost models where quality allows',     color: '#10b981' },
+  { id: 'premium',    label: 'Premium',    desc: 'Always uses the strongest available model',         color: '#ec4899' },
 ]
 
 // ─── Score Badge ──────────────────────────────────────────────────────────────
@@ -165,7 +173,11 @@ export default function ControlPlanePanel({
   onModeChange,
   streamingLog = [],
 }: ControlPlanePanelProps) {
-  const [expanded, setExpanded] = useState(true)
+  // Collapsed by default: this panel is an on-demand "Advanced" disclosure,
+  // not a persistent console (UX Redesign Section 9 & Critical #2 — a
+  // governance/model console meets neither the frequency-of-use nor
+  // universality-of-relevance bar that would justify permanent visibility).
+  const [expanded, setExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState<'log' | 'details' | 'routing'>('log')
 
   const selectedMode =
@@ -197,7 +209,7 @@ export default function ControlPlanePanel({
             animation: isLoading ? 'pulse 1s ease-in-out infinite' : 'none',
           }} />
           <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.02em' }}>
-            CONTROL PLANE
+            Advanced
           </span>
           {isLoading && (
             <span style={{ fontSize: 10, color: '#f59e0b', fontFamily: 'monospace' }}>PROCESSING…</span>
@@ -256,10 +268,10 @@ export default function ControlPlanePanel({
       {expanded && (
         <div style={{ padding: 16 }}>
 
-          {/* ── Governance Mode Selector ──────────────────────────────────── */}
+          {/* ── Quality Level Selector ────────────────────────────────────── */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
-              Governance Mode
+              Quality level
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {OVERRIDE_MODES.map(mode => (

@@ -260,7 +260,7 @@ function ProfileTab({ userId, authLoading }: { userId?: string; authLoading: boo
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">
-          Brand Profile
+          Brand Identity
         </h2>
 
         {authLoading ? (

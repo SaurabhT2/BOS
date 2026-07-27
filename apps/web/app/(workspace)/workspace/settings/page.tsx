@@ -161,7 +161,7 @@ export default function WorkspaceSettingsPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-200">Configure</h2>
+          <h2 className="text-sm font-semibold text-gray-200">AI &amp; Quality</h2>
           <div className="rounded-xl border border-gray-800 bg-gray-900 divide-y divide-gray-800">
             <button
               onClick={() => router.push('/workspace/settings/ai')}
@@ -189,6 +189,12 @@ export default function WorkspaceSettingsPage() {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
             </button>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-200">Integrations &amp; Billing</h2>
+          <div className="rounded-xl border border-gray-800 bg-gray-900 divide-y divide-gray-800">
             <button
               onClick={() => router.push('/workspace/settings/integrations')}
               className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-gray-800/40 transition-colors"
@@ -215,8 +221,17 @@ export default function WorkspaceSettingsPage() {
               </div>
               <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
             </button>
-            {/* Governance audit trail — Executive plan only */}
-            {plan === 'executive' && (
+          </div>
+        </section>
+
+        {/* Governance audit trail — Executive plan only. Its own grouped
+            section (rather than a peer row in a flat list) so the
+            compliance destination reads as a distinct category, not just
+            one more settings link — per UX doc §16. */}
+        {plan === 'executive' && (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-gray-200">Compliance</h2>
+            <div className="rounded-xl border border-gray-800 bg-gray-900 divide-y divide-gray-800">
               <button
                 onClick={() => router.push('/workspace/settings/governance-audit')}
                 className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-gray-800/40 transition-colors"
@@ -230,9 +245,9 @@ export default function WorkspaceSettingsPage() {
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
               </button>
-            )}
-          </div>
-        </section>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )

@@ -254,6 +254,26 @@ function UsageMeters({ usage }: { usage: UsageData }) {
 // unchanged /api/workspace/settings GET/PATCH contract.
 // ════════════════════════════════════════════════════════════════════════════
 
+// ─── Quality presets (UX doc §12 High #3, §13 "For 3") ────────────────────
+// Replaces the raw 0–100 "quality threshold" number field with three named,
+// plain-language levels. The underlying numeric threshold still exists and
+// is still sent to the same /api/workspace/settings contract, unchanged —
+// only the primary control surface changes from a number input to presets.
+// An exact-number override remains available behind a secondary disclosure
+// for the rare user who wants precision (nothing removed, only reframed).
+const QUALITY_PRESETS = [
+  { id: 'draft',    label: 'Draft-friendly', score: 55, desc: 'Faster turnaround — good for early drafts and brainstorming.' },
+  { id: 'balanced', label: 'Balanced',       score: 70, desc: 'The everyday setting — BrandOS\u2019s platform default.' },
+  { id: 'polished', label: 'Polished',       score: 85, desc: 'Extra scrutiny before content is shown to you.' },
+] as const
+
+function polishLabelForScore(score: number): string {
+  const closest = QUALITY_PRESETS.reduce((best, p) =>
+    Math.abs(p.score - score) < Math.abs(best.score - score) ? p : best
+  )
+  return closest.score === score ? closest.label : `${closest.label} (custom: ${score}%)`
+}
+
 function QualitySection({ settings, onSaved }: { settings: SettingsData; onSaved: () => void }) {
   const { resolved, canWriteSettings } = settings
   const [governanceThreshold, setGovernanceThreshold] = useState<string>(
@@ -265,8 +285,12 @@ function QualitySection({ settings, onSaved }: { settings: SettingsData; onSaved
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
-  // User-friendly labels for resolved settings
-  const qualityLevelLabel: Record<string, string> = {
+  // NOTE (terminology): this is the cloud/local *runtime mode*, distinct
+  // from the override/governance "Quality level" used in ControlPlanePanel
+  // and from the *quality threshold* below. Per UX doc §8, using "Quality
+  // level" for more than one concept is exactly the inconsistency being
+  // fixed — so this one is labeled "Processing mode" instead.
+  const processingModeLabel: Record<string, string> = {
     cloud: 'Maximum quality (Cloud)',
     local: 'Fast (Local)',
   }
@@ -321,8 +345,8 @@ function QualitySection({ settings, onSaved }: { settings: SettingsData; onSaved
       <div className="grid grid-cols-2 gap-3">
         {[
           { label: 'AI model', value: modelLabel[resolved.preferred_provider] ?? resolved.preferred_provider },
-          { label: 'Quality level', value: qualityLevelLabel[resolved.runtime_mode] ?? resolved.runtime_mode },
-          { label: 'Quality threshold', value: `${resolved.governance_score_threshold}% minimum score` },
+          { label: 'Processing mode', value: processingModeLabel[resolved.runtime_mode] ?? resolved.runtime_mode },
+          { label: 'How polished content should be', value: polishLabelForScore(resolved.governance_score_threshold) },
         ].map(({ label, value }) => (
           <div key={label} className="px-4 py-3 rounded-lg bg-gray-900 border border-gray-800">
             <p className="text-xs text-gray-500 mb-0.5">{label}</p>
@@ -331,25 +355,62 @@ function QualitySection({ settings, onSaved }: { settings: SettingsData; onSaved
         ))}
       </div>
 
+      {!canWriteSettings && (
+        <p className="text-xs text-amber-400/80 flex items-center gap-1.5">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          These overrides aren&rsquo;t available on your current plan — you&rsquo;re seeing the platform defaults below.
+        </p>
+      )}
+
       <fieldset disabled={!canWriteSettings} className="space-y-4">
         <legend className="sr-only">Quality overrides</legend>
 
         <div className="space-y-1.5">
-          <label htmlFor="threshold" className="text-sm text-gray-300">
-            Quality threshold
+          <label className="text-sm text-gray-300">
+            How polished should content be before you see it?
           </label>
           <p className="text-xs text-gray-500">
-            BrandOS will only deliver content that scores at or above this threshold.
-            Content below it gets automatically improved and re-scored.
-            Platform default is 70 — raise it for stricter brand compliance, lower it for faster output.
+            Content below your chosen level gets automatically improved and re-scored before BrandOS shows it to you.
           </p>
-          <input
-            id="threshold" type="number" min={0} max={100} step={1}
-            value={governanceThreshold}
-            onChange={e => setGovernanceThreshold(e.target.value)}
-            placeholder={`${resolved.governance_score_threshold} (current threshold)`}
-            className="w-full rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:opacity-40 disabled:cursor-not-allowed"
-          />
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label="How polished should content be before you see it?">
+            {QUALITY_PRESETS.map(preset => {
+              const isSelected = governanceThreshold !== ''
+                ? parseFloat(governanceThreshold) === preset.score
+                : resolved.governance_score_threshold === preset.score
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => setGovernanceThreshold(String(preset.score))}
+                  className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                    isSelected
+                      ? 'border-purple-500 bg-purple-500/10'
+                      : 'border-gray-700 bg-gray-900 hover:border-gray-600'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  <div className={`text-sm font-medium ${isSelected ? 'text-purple-300' : 'text-gray-200'}`}>{preset.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5 leading-snug">{preset.desc}</div>
+                </button>
+              )
+            })}
+          </div>
+
+          <details className="pt-1">
+            <summary className="text-xs text-gray-500 hover:text-gray-300 cursor-pointer transition-colors select-none">
+              Set an exact number instead
+            </summary>
+            <div className="pt-2">
+              <input
+                id="threshold" type="number" min={0} max={100} step={1}
+                value={governanceThreshold}
+                onChange={e => setGovernanceThreshold(e.target.value)}
+                placeholder={`${resolved.governance_score_threshold} (current threshold)`}
+                className="w-full rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-gray-600 mt-1">Platform default is 70. This is the same setting as the presets above, just entered directly.</p>
+            </div>
+          </details>
         </div>
 
         <div className="space-y-1.5">
@@ -368,7 +429,7 @@ function QualitySection({ settings, onSaved }: { settings: SettingsData; onSaved
 
         <div className="space-y-1.5">
           <label htmlFor="mode" className="text-sm text-gray-300">
-            Quality level <span className="ml-2 text-xs text-gray-500">(blank = use platform default)</span>
+            Processing mode <span className="ml-2 text-xs text-gray-500">(blank = use platform default)</span>
           </label>
           <p className="text-xs text-gray-500">
             Maximum quality uses cloud AI for the most accurate, on-brand results. Fast mode uses local processing — quicker, but may score lower.
