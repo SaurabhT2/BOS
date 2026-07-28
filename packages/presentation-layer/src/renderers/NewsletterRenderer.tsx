@@ -14,8 +14,7 @@
  *   - Newsletter meta: read time, section count, word count
  */
 
-import { useState } from 'react'
-import { Mail, Clock, Copy, Check, BookOpen, Zap, MessageCircle } from 'lucide-react'
+import { Mail, Clock, BookOpen, Zap, MessageCircle } from 'lucide-react'
 import type { NewsletterArtifact, NewsletterSection } from '@brandos/contracts'
 
 // ─── Section type config ──────────────────────────────────────────────────────
@@ -190,40 +189,31 @@ function SectionCard({ section }: { section: NewsletterSection }) {
   )
 }
 
-// ─── Copy button ──────────────────────────────────────────────────────────────
+// ─── Plain-text extraction ─────────────────────────────────────────────────
+//
+// Iteration 3 (Artifact-first redesign): this used to power a standalone
+// "Copy text" button living inside the artifact's own header — a page-level
+// action competing for attention next to the content it acts on. The logic
+// is unchanged; it's now a pure export consumed by apps/web's unified
+// ExportMenu ("Copy as text"), which owns the actual clipboard call so this
+// package stays free of that action's UI chrome.
 
-function CopyNewsletterButton({ artifact }: { artifact: NewsletterArtifact }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    const lines: string[] = [
-      `Subject: ${artifact.subject_line}`,
-      `Preview: ${artifact.preview_text ?? ''}`,
-      '',
-      artifact.hook ? `${artifact.hook}\n` : '',
-    ]
-    for (const s of artifact.sections) {
-      if (s.type === 'divider') { lines.push('---'); continue }
-      if (s.heading) lines.push(`## ${s.heading}`)
-      if (s.body)    lines.push(s.body)
-      if (s.bullets) lines.push(...s.bullets.map(b => `• ${b}`))
-      if (s.callout) lines.push(`> ${s.callout}`)
-      lines.push('')
-    }
-    await navigator.clipboard.writeText(lines.filter(Boolean).join('\n'))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+export function extractNewsletterPlainText(artifact: NewsletterArtifact): string {
+  const lines: string[] = [
+    `Subject: ${artifact.subject_line}`,
+    `Preview: ${artifact.preview_text ?? ''}`,
+    '',
+    artifact.hook ? `${artifact.hook}\n` : '',
+  ]
+  for (const s of artifact.sections) {
+    if (s.type === 'divider') { lines.push('---'); continue }
+    if (s.heading) lines.push(`## ${s.heading}`)
+    if (s.body)    lines.push(s.body)
+    if (s.bullets) lines.push(...s.bullets.map(b => `• ${b}`))
+    if (s.callout) lines.push(`> ${s.callout}`)
+    lines.push('')
   }
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors px-2 py-1 rounded-lg border border-gray-700 hover:border-gray-500"
-    >
-      {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-      {copied ? 'Copied' : 'Copy text'}
-    </button>
-  )
+  return lines.filter(Boolean).join('\n')
 }
 
 // ─── Main renderer ────────────────────────────────────────────────────────────
@@ -252,16 +242,11 @@ export default function NewsletterRenderer({ artifact, className = '' }: Newslet
   }
 
   return (
-    <div className={`space-y-3 ${className}`}>
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <NewsletterHeader artifact={artifact} />
-        </div>
-        <div className="flex-shrink-0 pt-1">
-          <CopyNewsletterButton artifact={artifact} />
-        </div>
-      </div>
+    // Iteration 3: capped reading width + email-preview framing, distinct
+    // from the wider card treatment used by Carousel/Deck/Report — a
+    // newsletter should feel like an email open in a reader, not a slide.
+    <div className={`max-w-xl mx-auto space-y-3 ${className}`}>
+      <NewsletterHeader artifact={artifact} />
 
       {/* Sections */}
       <div className="space-y-3">

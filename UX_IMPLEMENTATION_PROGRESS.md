@@ -190,3 +190,147 @@ the source doc into `docs/ux-glossary.md` and linking it from
 Every numbered item in the doc's Section 12 severity list (Critical #1–2,
 High #3–6, Medium #7–10, Low #11–12) has been implemented and re-verified
 after each change (see Files changed / Verification above).
+
+---
+
+## Phase 5 — Artifact-first review experience
+Status: **Done.**
+
+Source: two prior UX-review documents, treated as approved architecture and
+implemented as-is, not re-litigated —
+`BrandOS-Artifact-Experience-UX-Review.md` (Iteration 1, problem diagnosis)
+and `BrandOS-Artifact-Experience-UX-Redesign-Iteration2.md` (Iteration 2,
+target design). Branch: `feature/artifact-first-review-experience`.
+
+New product principle driving this phase: the Create → Preview screen
+should read as an enterprise content platform, not an AI pipeline. The
+generated artifact should dominate the page; everything else exists only to
+support the decision "would I publish this?"
+
+### What changed
+
+- [x] **Artifact-first rendering.** `CarouselRenderer` and `DeckRenderer`
+      moved from an accordion (one slide open at a time, content hidden by
+      default) to `SlideViewer` — a new shared component
+      (`renderers/shared/SlideViewer.tsx`) — full content shown for one
+      active slide at a time, with prev/next, dot pagination, arrow-key and
+      touch-swipe navigation. `ReportRenderer` moved from an accordion to a
+      continuous scrollable document (every section renders in full, in
+      reading order — a report is read, not paged through).
+      `NewsletterRenderer` (already fully expanded) got a capped reading
+      width and email-preview framing instead of the wide card shared by
+      the other three types.
+- [x] **Technical detail consolidated into one Inspect panel.** The inline
+      "Semantic Richness" block, per-slide density badges, and the
+      `generation_trace` footer — each duplicated by hand across
+      Carousel/Deck/Report — are removed from all four renderers. That data
+      (plus what `WhyThisPanel` and the Advanced rail's `ControlPlanePanel`
+      + "Session details" card used to show) now flows through one new
+      `InspectPanel` component (`presentation-layer/src/components/
+      InspectPanel.tsx`), closed by default, with five tabs — Execution /
+      Quality / Knowledge / Identity / Learning — matching the RuntimeOS
+      observability categories requested. Pure data shaping lives in
+      `components/insights.ts` (`buildExecutionInsight`/
+      `buildQualityInsight`), built directly from each artifact's own
+      `generation_trace`/`richness_metrics` (confirmed uniformly typed
+      across all four artifact types at the `@brandos/contracts` level —
+      no new plumbing needed for those two pillars).
+- [x] **One dominant Export action.** The old `ExportToolbar` (standalone
+      Copy button, primary Export button, "More export options" menu, and
+      an "ISkill validated" pill, all visible at once, rendered above the
+      artifact) is replaced by a new `ExportMenu` component
+      (`presentation-layer/src/components/ExportMenu.tsx`), rendered below
+      the artifact instead of above it. Default click downloads the
+      recommended format immediately; every other format is one click away
+      in a menu; batch multi-format export and the developer JSON copy are
+      real but deliberately tucked behind small links rather than being the
+      default interaction. Every underlying export call
+      (`exportArtifact`/`exportToCanva`/`exportToFigma`/`copyJSON`) is
+      unchanged — only which UI triggers them changed.
+- [x] **Save removed as a step and as a word.** The 4-step wizard
+      (What/About/Preview/Save) is now 3 steps (What/About/Review). The SSE
+      result handler already sets `savedCampaignId` from the response the
+      instant generation completes — there was never anything to save. The
+      "Continue to Save" button, the separate Save screen, "Saved — export
+      or get feedback," and "Nothing to save yet" are gone, replaced by one
+      ambient line: "Autosaved to Library · Checked against your brand
+      guidelines...". `RepurposeWidget`, `SaveBriefButton` (a genuinely
+      different feature — saving a resumable *brief* link, not the
+      artifact), and the Library-link confirmation moved from the deleted
+      Save step onto the single terminal Review step.
+- [x] **Feedback de-emphasized, not removed.** The "Useful? Yes/Generic"
+      card no longer renders as its own bordered block on the page — the
+      same `submitFeedback`/`feedbackSent` state now feeds InspectPanel's
+      Learning tab.
+- [x] **Regenerate kept as a real, quieter secondary action** — text-weight,
+      after Export in reading order — since slide-level editing is out of
+      scope for this page and Regenerate is the only recovery path a user
+      has if they don't like what they got.
+
+### Files changed
+
+- `apps/web/app/(workspace)/workspace/create/page.tsx` — `STEPS` trimmed;
+  `ExportToolbar`/`WhyThisPanel`/`FeedbackRow` removed; new
+  `ArtifactExportMenu` adapter + `buildActiveInsightSections()` +
+  `extractKnowledgeItems()` added; the four artifact sections + the former
+  Save step merged into one Review step; Advanced rail lost
+  `ControlPlanePanel` and the "Session details" card (kept
+  `RuntimeModeSelector`/`ModelSelector` — real settings, not inspection
+  data); now-unused icon imports (`HelpCircle`, `Download`, `ThumbsUp`,
+  `ThumbsDown`) removed.
+- `packages/presentation-layer/src/renderers/CarouselRenderer.tsx`,
+  `DeckRenderer.tsx`, `ReportRenderer.tsx`, `NewsletterRenderer.tsx` —
+  richness/trace/badge chrome removed; Carousel/Deck moved to
+  `SlideViewer`; Report moved to a continuous document; Newsletter got
+  email-preview framing; each gained a pure `extract*PlainText()` export
+  for the new "Copy as text" menu action (Newsletter's pre-existing
+  `CopyNewsletterButton` logic became `extractNewsletterPlainText`).
+- `packages/presentation-layer/src/renderers/shared/SlideViewer.tsx` (new)
+  — shared pagination shell so Carousel and Deck don't each reimplement
+  keyboard/touch/dot navigation.
+- `packages/presentation-layer/src/components/insights.ts` (new) — pure
+  types + builders for the five Inspect pillars.
+- `packages/presentation-layer/src/components/InspectPanel.tsx` (new).
+- `packages/presentation-layer/src/components/ExportMenu.tsx` (new).
+- `packages/presentation-layer/src/index.ts` — exports the four new
+  symbols above plus the `extract*PlainText` functions.
+
+### Verification
+
+- `npx turbo typecheck` (full monorepo) → pass, 33/33 tasks.
+- `npx turbo test` (full monorepo) → pass, 32/32 tasks (presentation-layer
+  49 tests, apps/web 45 tests — no test file needed changes; the existing
+  renderer contract tests assert prop/registration shape, not markup, so
+  the internal restructuring didn't touch what they check).
+- `node scripts/check-workspace.mjs` / `check-boundaries.mjs` /
+  `lint-imports.mjs` / `check-exports.mjs` / `check-circular.mjs` /
+  `check-route-boundaries.mjs` → all pass.
+- `npx turbo build --filter=@brandos/web` → **pass** (this succeeded in
+  this environment, unlike the Phase 0–4 agent's note that a full build
+  wasn't runnable without env vars — `/workspace/create` compiled and
+  prerendered as a static page along with the rest of the app; 76/76 pages
+  generated).
+
+### Known gaps / intentionally deferred (see independent critique in the
+### handoff doc under `docs/handoffs/` for the full list)
+
+- `ControlPlanePanel`'s richer live fields (`activity_log`, full
+  `intent`/`routing` detail) are only partially represented in
+  InspectPanel's Execution tab — I mapped `routing.preferred_provider` as a
+  fallback when an artifact has no `generation_trace`, but did not port the
+  full intent/routing narrative `WhyThisPanel` used to show. Worth a
+  follow-up pass if that detail turns out to matter to users, rather than
+  silently dropped.
+- `changeOverrideMode` (the setter `ControlPlanePanel`'s override toggle
+  used to call) has no UI trigger left after `ControlPlanePanel`'s removal
+  from the Advanced rail — `overrideMode` itself is still read and sent on
+  every generate call, so behavior is unchanged, but the setter is
+  currently dead code from a UI perspective. Flagged, not removed, since
+  removing state without knowing every consumer felt riskier than a
+  one-line note.
+- Knowledge-pillar data for Newsletter is empty (no citation/data-point
+  field exists on that artifact type) — shows the InspectPanel's honest
+  empty state rather than fabricated content.
+- No visual regression testing was possible in this environment (no
+  running dev server against real generated data) — the manual review
+  checklist in the handoff doc covers what to check by hand before merge.

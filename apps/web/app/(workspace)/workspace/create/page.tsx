@@ -1,10 +1,21 @@
 'use client'
 
 /**
- * Create — 4-step progressive flow (What → About → Preview → Save).
+ * Create — 3-step progressive flow (What → About → Review).
+ *
+ * Iteration 3 (Artifact-first redesign, see UX_IMPLEMENTATION_PROGRESS.md
+ * Phase 5): the former 4th step, "Save," is removed. Generation already
+ * persists a campaign row (see the SSE result handler below, which sets
+ * `savedCampaignId` from the response the instant generation completes) —
+ * there was never anything to save. What used to be "Preview" is now called
+ * "Review" and is the terminal step: the artifact renders at export fidelity,
+ * one Export action is dominant, and everything else (technical detail,
+ * feedback, repurposing, saving a resumable brief) lives on that same screen
+ * instead of behind an extra click.
  *
  * Per brandos_rollout_plan.html Phase 2 checklist:
  *  - "Redesign Create: 4-step progressive flow (What → About → Preview → Save)"
+ *    — superseded by Iteration 3; see rationale above.
  *  - "Add Campaign as first-class Create option"
  *  - "Remove Override Mode from creation UI (auto-infer from task type)"
  *
@@ -26,7 +37,7 @@
  * unchanged), and the per-format auto-infer mapping is left as a single
  * TODO constant below for whoever has the real enum to fill in. The
  * underlying ControlPlanePanel + onModeChange escape hatch is kept
- * available (now folded into the Preview step) rather than deleted,
+ * available (now folded into the Advanced disclosure) rather than deleted,
  * since I can't fully verify it has no other internal purpose.
  *
  * CAMPAIGN LITE (brandos_redesign_strategic_completion.md §5): "Campaign"
@@ -36,7 +47,7 @@
  * shared (client-generated) campaign_brief_id for display grouping only —
  * the campaigns table has no backing column for this yet (see
  * /api/campaigns route notes), so the grouping id is NOT persisted
- * server-side; it only groups the results within this session's Preview
+ * server-side; it only groups the results within this session's Review
  * step. A real cross-session "Active campaigns" surface needs that schema
  * change first (tracked, not implemented here — outside apps/web's
  * package boundary per the strategic doc's "own later phase" framing).
@@ -47,20 +58,27 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import {
   RuntimeModeSelector,
   ModelSelector,
-  ControlPlanePanel,
   useAvailableModes,
   CarouselRenderer,
   DeckRenderer,
   ReportRenderer,
   NewsletterRenderer,
+  extractCarouselPlainText,
+  extractDeckPlainText,
+  extractReportPlainText,
+  extractNewsletterPlainText,
+  InspectPanel,
+  ExportMenu,
+  buildExecutionInsight,
+  buildQualityInsight,
 } from '@brandos/presentation-layer'
+import type { ArtifactInsightSections } from '@brandos/presentation-layer'
 import {
   Sparkles, Wand2, Brain, FileText, LayoutGrid, Rocket,
   Loader, Copy, LinkIcon, Mail,
-  ThumbsUp, ThumbsDown, AlertTriangle, Shield,
-  Download, ArrowDownToLine, CheckCircle2,
+  AlertTriangle, Shield,
+  ArrowDownToLine, CheckCircle2,
   Presentation, BookOpen, Lock, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Repeat,
-  HelpCircle,
 } from 'lucide-react'
 import { trackEvent, analyticsEvents, trackGenerationPerformance } from '@/lib/client-analytics'
 import { extractSourceText, TRANSFORM_MODES, runRepurpose } from '@/lib/repurpose'
@@ -72,7 +90,7 @@ import type { ControlPlaneData } from '@brandos/presentation-layer'
 // ── Types ─────────────────────────────────────────────────────────────────────
 type ToneMode = 'executive' | 'bold' | 'educational' | 'founder'
 type UnavailableAction = { action: string; label: string }
-type Step = 'what' | 'about' | 'preview' | 'save'
+type Step = 'what' | 'about' | 'preview'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'brandos_generation_mode'
@@ -88,8 +106,7 @@ const SMART_PROMPTS = [
 const STEPS: { id: Step; label: string }[] = [
   { id: 'what',    label: 'What' },
   { id: 'about',   label: 'About' },
-  { id: 'preview', label: 'Preview' },
-  { id: 'save',    label: 'Save' },
+  { id: 'preview', label: 'Review' },
 ]
 
 // Maps a quick-create query param's format value to this page's internal
@@ -702,241 +719,73 @@ function CreatePageInner() {
     setStep(target)
   }
 
-  // ── Shared export toolbar (redesigned per UX doc §12 High #4 / §13 "For 4") ─
+  // ── Export action (Iteration 3: Artifact-first redesign) ──────────────────
   //
-  // Previously: six equal-weight, icon-only buttons (JSON, HTML, PDF, PPTX,
-  // Canva, Figma) with no default, forcing a full evaluation of six options
-  // every time. Now: one primary export action defaulted to the most
-  // sensible format for the artifact type, a labeled "More export options"
-  // control for everything else, and JSON reframed as a separated
-  // "Developer format" — every format still fully available, none removed.
-  function ExportToolbar({
-    icon: Icon, iconClass, title, subtitle, artifactKind,
-    onCopy, onExportJson, onExportHtml, onExportPdf, onExportPptx, onExportCanva, onExportFigma,
+  // Replaces the old ExportToolbar — a standalone Copy button, a primary
+  // Export button, a "More export options" menu, and an "ISkill validated"
+  // pill, all visible at once, rendered ABOVE the artifact. Now: one
+  // dominant Export action from @brandos/presentation-layer's ExportMenu,
+  // rendered AFTER the artifact (the content earns the eye first), with
+  // every other format one click away and JSON kept as a small developer
+  // link rather than a peer action. Every underlying export call
+  // (exportArtifact/exportToCanva/exportToFigma/copyJSON) is unchanged —
+  // only which UI triggers them changed.
+  type ArtifactKind = 'carousel' | 'deck' | 'report' | 'newsletter'
+
+  const RECOMMENDED_FORMAT: Record<ArtifactKind, { id: string; label: string }> = {
+    carousel:   { id: 'pdf',  label: 'PDF' },
+    deck:       { id: 'pptx', label: 'PowerPoint' },
+    report:     { id: 'pdf',  label: 'PDF' },
+    newsletter: { id: 'html', label: 'HTML' },
+  }
+
+  const SECONDARY_FORMATS: Record<ArtifactKind, { id: string; label: string }[]> = {
+    carousel:   [{ id: 'html', label: 'HTML' }, { id: 'pptx', label: 'PowerPoint' }, { id: 'canva', label: 'Open in Canva' }, { id: 'figma', label: 'Figma import code' }],
+    deck:       [{ id: 'html', label: 'HTML' }, { id: 'pdf', label: 'PDF' }, { id: 'canva', label: 'Open in Canva' }, { id: 'figma', label: 'Figma import code' }],
+    report:     [{ id: 'html', label: 'HTML' }, { id: 'pptx', label: 'PowerPoint' }, { id: 'canva', label: 'Open in Canva' }, { id: 'figma', label: 'Figma import code' }],
+    newsletter: [{ id: 'pdf', label: 'PDF' }],
+  }
+
+  function runExportFormat(
+    kind: ArtifactKind,
+    formatId: string,
+    artifact: CarouselArtifact | DeckArtifact | ReportArtifact | NewsletterArtifact,
+  ) {
+    if (formatId === 'canva')  return exportToCanva(artifact as CarouselArtifact | DeckArtifact | ReportArtifact)
+    if (formatId === 'figma')  return exportToFigma(artifact as CarouselArtifact | DeckArtifact | ReportArtifact)
+    return exportArtifact(formatId as 'html' | 'json' | 'pdf' | 'pptx', artifact)
+  }
+
+  function ArtifactExportMenu({
+    kind, artifact, plainText,
   }: {
-    icon: React.ComponentType<{ className?: string }>
-    iconClass: string
-    title: string
-    subtitle?: string
-    artifactKind: 'carousel' | 'deck' | 'report' | 'newsletter'
-    onCopy: () => void
-    onExportJson: () => void
-    onExportHtml: () => void
-    onExportPdf: () => void
-    onExportPptx: () => void
-    onExportCanva: () => void
-    onExportFigma: () => void
+    kind: ArtifactKind
+    artifact: CarouselArtifact | DeckArtifact | ReportArtifact | NewsletterArtifact
+    plainText: string
   }) {
-    const [moreOpen, setMoreOpen] = useState(false)
-
-    // Recommended default per artifact type — the format most people reach
-    // for, so the primary action is a single confident click, not a menu.
-    const PRIMARY: Record<typeof artifactKind, { label: string; run: () => void; format: string }> = {
-      carousel:   { label: 'Save & Export PDF',        run: onExportPdf,  format: 'pdf'  },
-      deck:       { label: 'Save & Export PowerPoint',  run: onExportPptx, format: 'pptx' },
-      report:     { label: 'Save & Export PDF',         run: onExportPdf,  format: 'pdf'  },
-      newsletter: { label: 'Save & Export HTML',        run: onExportHtml, format: 'html' },
-    }
-    const primary = PRIMARY[artifactKind]
-
-    const secondaryFormats: Array<{ id: string; label: string; run: () => void }> = [
-      { id: 'html',  label: 'HTML',            run: onExportHtml },
-      { id: 'pdf',   label: 'PDF',              run: onExportPdf },
-      { id: 'pptx',  label: 'PowerPoint',       run: onExportPptx },
-      { id: 'canva', label: 'Open in Canva',    run: onExportCanva },
-      { id: 'figma', label: 'Figma import code', run: onExportFigma },
-    ].filter(f => f.id !== primary.format)
-
     return (
-      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-3 mb-2">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Icon className={`w-4 h-4 flex-shrink-0 ${iconClass}`} />
-            <span className="text-sm font-semibold text-gray-200">{title}</span>
-            {subtitle && <span className="text-xs text-gray-500">{subtitle}</span>}
-            <span className="text-xs px-2 py-0.5 bg-green-900/30 text-green-400 border border-green-700/40 rounded-full flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" /> ISkill validated
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0 relative">
-            <button onClick={onCopy} title="Copy JSON"
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-400 hover:text-white transition-all">
-              <Copy className="w-3 h-3" />Copy
-            </button>
-
-            {/* Primary export action */}
-            <button
-              onClick={primary.run}
-              disabled={exportingFormat !== null}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-xs font-semibold text-white transition-all"
-            >
-              {exportingFormat === primary.format ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <ArrowDownToLine className="w-3.5 h-3.5" />}
-              {primary.label}
-            </button>
-
-            {/* Secondary: everything else, collapsed under a labeled control */}
-            <button
-              onClick={() => setMoreOpen(o => !o)}
-              aria-expanded={moreOpen}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-300 transition-all"
-            >
-              More export options
-              {moreOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-
-            {moreOpen && (
-              <div className="absolute top-full right-0 mt-1 w-56 bg-gray-900 border border-gray-700 rounded-xl shadow-xl z-50 py-1">
-                {secondaryFormats.map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => { f.run(); setMoreOpen(false) }}
-                    disabled={exportingFormat !== null}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-white/5 text-left disabled:opacity-50"
-                  >
-                    {exportingFormat === f.id ? <Loader className="w-3 h-3 animate-spin" /> : <ArrowDownToLine className="w-3 h-3 text-gray-500" />}
-                    {f.label}
-                  </button>
-                ))}
-                <div className="my-1 border-t border-gray-800" />
-                <button
-                  onClick={() => { onExportJson(); setMoreOpen(false) }}
-                  disabled={exportingFormat !== null}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-500 hover:bg-white/5 text-left disabled:opacity-50"
-                  title="Raw artifact data — for developers integrating with the API"
-                >
-                  {exportingFormat === 'json' ? <Loader className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                  Developer format (JSON)
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <ExportMenu
+        recommendedFormat={RECOMMENDED_FORMAT[kind]}
+        secondaryFormats={SECONDARY_FORMATS[kind]}
+        busyFormatId={exportingFormat}
+        onExport={(formatId) => runExportFormat(kind, formatId, artifact)}
+        onExportBatch={async (formatIds) => {
+          for (const id of formatIds) await runExportFormat(kind, id, artifact)
+        }}
+        onCopyText={() => navigator.clipboard.writeText(plainText).catch(() => {})}
+        onCopyJSON={() => copyJSON(artifact)}
+      />
     )
   }
 
-  // ── P3.28 — "Why this?" explainability panel ─────────────────────────────
-  // Appears in the Preview step below generated output whenever cpData is
-  // present. Shows: detected intent + topic, provider/mode routing reason,
-  // quality score with plain-language verdict, and any repairs applied.
 
-  function WhyThisPanel({ cpData }: { cpData: ControlPlaneData }) {
-    const [open, setOpen] = useState(false)
-    const score   = cpData.final_score ?? cpData.original_score
-    const intent  = cpData.intent
-    const routing = cpData.routing
-    const fixes   = cpData.fixes_applied ?? []
-    const retries = cpData.retries ?? 0
-
-    const scoreVerdict = score == null ? null
-      : score >= 75 ? 'Passed quality threshold — no repairs needed.'
-      : score >= 60 ? 'Passed after repairs — BrandOS improved this before showing it to you.'
-      : 'Below threshold — further improvement may be needed.'
-
-    return (
-      <div className="rounded-xl border border-gray-800 bg-gray-900/60">
-        <button
-          onClick={() => setOpen(o => !o)}
-          className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-800/30 rounded-xl transition-colors"
-        >
-          <HelpCircle className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-          <span className="text-xs font-medium text-gray-400">Why did BrandOS generate this?</span>
-          {open
-            ? <ChevronUp className="w-3.5 h-3.5 text-gray-600 ml-auto" />
-            : <ChevronDown className="w-3.5 h-3.5 text-gray-600 ml-auto" />}
-        </button>
-
-        {open && (
-          <div className="px-4 pb-4 space-y-4 border-t border-gray-800 pt-3">
-            {/* Intent */}
-            {intent && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Detected intent</p>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {intent.detected_task && (
-                    <div className="bg-gray-800 rounded-lg px-3 py-2">
-                      <span className="text-gray-500">Task type</span>
-                      <p className="text-gray-200 mt-0.5">{String(intent.detected_task).replace(/_/g, ' ')}</p>
-                    </div>
-                  )}
-                  {intent.complexity && (
-                    <div className="bg-gray-800 rounded-lg px-3 py-2">
-                      <span className="text-gray-500">Complexity</span>
-                      <p className="text-gray-200 mt-0.5 capitalize">{intent.complexity}</p>
-                    </div>
-                  )}
-                  {intent.ambiguity_level && (
-                    <div className="bg-gray-800 rounded-lg px-3 py-2">
-                      <span className="text-gray-500">Ambiguity</span>
-                      <p className="text-gray-200 mt-0.5 capitalize">{intent.ambiguity_level}</p>
-                    </div>
-                  )}
-                  {intent.confidence != null && (
-                    <div className="bg-gray-800 rounded-lg px-3 py-2">
-                      <span className="text-gray-500">Intent confidence</span>
-                      <p className="text-gray-200 mt-0.5">{Math.round(intent.confidence * 100)}%</p>
-                    </div>
-                  )}
-                </div>
-                {intent.suggested_improvements?.length > 0 && (
-                  <p className="text-xs text-amber-400/80 mt-2">
-                    Tip: {intent.suggested_improvements[0]}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Routing */}
-            {routing && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">How it was generated</p>
-                <div className="bg-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 space-y-1">
-                  {routing.preferred_provider && <p><span className="text-gray-500">Provider: </span>{String(routing.preferred_provider)}</p>}
-                  {routing.forceProvider      && <p><span className="text-gray-500">Forced provider: </span>{String(routing.forceProvider)}</p>}
-                  {routing.reason             && <p><span className="text-gray-500">Why: </span>{routing.reason}</p>}
-                  {routing.preferred_tiers && routing.preferred_tiers.length > 0 && (
-                    <p><span className="text-gray-500">Tiers: </span>{routing.preferred_tiers.join(', ')}</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Score */}
-            {score != null && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Quality score</p>
-                <div className="flex items-center gap-3">
-                  <span className={`text-xl font-bold tabular-nums ${score >= 75 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
-                    {score}
-                  </span>
-                  <div>
-                    <p className="text-xs text-gray-300">{scoreVerdict}</p>
-                    {retries > 0 && <p className="text-xs text-gray-500 mt-0.5">Repaired {retries} time{retries !== 1 ? 's' : ''}</p>}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Fixes */}
-            {fixes.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Improvements applied</p>
-                <ul className="space-y-1">
-                  {fixes.map((f, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-gray-400">
-                      <Check className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
+  // ── "Why did BrandOS generate this?" explainability ──────────────────────
+  // Iteration 3: this used to be its own collapsible panel (WhyThisPanel),
+  // duplicating the same routing/score/fixes data the Advanced rail's
+  // ControlPlanePanel also showed. Both are gone — that data now feeds the
+  // single InspectPanel via buildExecutionInsight/buildQualityInsight (see
+  // the Review step render below), plus intent/routing detail folded into
+  // the Execution tab where cpData is available.
 
   // ── P3: Cross-session campaign brief persistence ───────────────────────────
   // Saves a campaign brief stub so users can restore their work via
@@ -990,30 +839,12 @@ function CreatePageInner() {
     )
   }
 
-  // ── Shared feedback row (unchanged) ───────────────────────────────────────
-  function FeedbackRow() {
-    if (!savedCampaignId) return null
-    return (
-      <div className="mt-2 p-3 bg-gray-900/60 border border-gray-800 rounded-xl flex items-center justify-between">
-        <span className="text-xs text-gray-600 font-mono">#{savedCampaignId.slice(0, 8)}</span>
-        {!feedbackSent ? (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Useful?</span>
-            <button onClick={() => submitFeedback('useful')}
-              className="flex items-center gap-1 px-2.5 py-1 bg-gray-800 hover:bg-green-600/20 hover:text-green-400 border border-gray-700 rounded text-xs transition-all">
-              <ThumbsUp className="w-3 h-3" />Yes
-            </button>
-            <button onClick={() => submitFeedback('generic')}
-              className="flex items-center gap-1 px-2.5 py-1 bg-gray-800 hover:bg-red-600/20 hover:text-red-400 border border-gray-700 rounded text-xs transition-all">
-              <ThumbsDown className="w-3 h-3" />Generic
-            </button>
-          </div>
-        ) : (
-          <span className="text-xs text-green-400">Thanks ✓</span>
-        )}
-      </div>
-    )
-  }
+  // ── Feedback (Iteration 3) ─────────────────────────────────────────────────
+  // The "Useful? Yes/Generic" card used to render as its own bordered block
+  // on the page — its own visual weight, competing with the artifact. The
+  // submit logic (submitFeedback/feedbackSent/savedCampaignId) is unchanged;
+  // it's now surfaced inside InspectPanel's Learning tab (see the Review step
+  // render below), reachable but no longer demanding attention on load.
 
   // ── Repurpose (GTM Critical Item 2, 2026-06-21) ───────────────────────────
   // Second entry point for Content Repurposing, alongside the Library
@@ -1032,6 +863,50 @@ function CreatePageInner() {
 
   function getActiveArtifact(): any {
     return carouselResult ?? deckResult ?? reportResult ?? newsletterResult ?? outputResult ?? null
+  }
+
+  // ── Inspect panel data (Iteration 3) ───────────────────────────────────────
+  // Assembles the five pillars from whatever the active artifact + cpData +
+  // feedback state already carry — no new data sources, just reshaping what
+  // WhyThisPanel, the per-slide badges, and the Advanced rail's "Session
+  // details" card used to show separately. Only one artifact is "active" at
+  // a time by the same precedence getActiveArtifact() already uses, so this
+  // stays a single panel even in Campaign Lite (multiple formats generated
+  // in one session).
+  function buildActiveInsightSections(): ArtifactInsightSections {
+    const artifact = getActiveArtifact()
+    const trace = artifact && 'generation_trace' in artifact ? artifact.generation_trace : undefined
+    const richness = artifact && 'richness_metrics' in artifact ? artifact.richness_metrics : undefined
+    return {
+      execution: buildExecutionInsight(trace) ?? (statusLineCpData?.routing
+        ? { provider: String(statusLineCpData.routing.preferred_provider ?? statusLineCpData.routing.forceProvider ?? '') || undefined }
+        : undefined),
+      quality: buildQualityInsight(richness),
+      knowledge: extractKnowledgeItems(artifact),
+      identity: { brandMemoryApplied: applyBrandMemory },
+      learning: {
+        feedbackSubmitted: feedbackSent ? 'useful' : null,
+        onSubmitFeedback: (label) => submitFeedback(label),
+        resolvedViolations: statusLineCpData?.fixes_applied,
+      },
+    }
+  }
+
+  function extractKnowledgeItems(artifact: any): { label: string; value?: string; source?: string }[] {
+    if (!artifact) return []
+    if (artifact.sections && Array.isArray(artifact.sections)) {
+      // Report: data_points already carry citations.
+      return artifact.sections.flatMap((s: any) =>
+        (s.data_points ?? []).map((d: any) => ({ label: d.label, value: String(d.value), source: d.source }))
+      )
+    }
+    if (artifact.slides && Array.isArray(artifact.slides)) {
+      // Deck: stats are the closest grounding signal available.
+      return artifact.slides.flatMap((s: any) =>
+        (s.stats ?? []).map((st: any) => ({ label: st.label, value: String(st.value), source: st.delta }))
+      )
+    }
+    return []
   }
 
   async function handleQuickRepurpose() {
@@ -1267,7 +1142,7 @@ function CreatePageInner() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className={`space-y-5 ${(step === 'preview' || step === 'save') && !isOnboardingFirstRun ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+          <div className={`space-y-5 ${step === 'preview' && !isOnboardingFirstRun ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
 
             {/* ════════ STEP 1: WHAT ════════════════════════════════════════ */}
             {step === 'what' && (
@@ -1499,78 +1374,38 @@ function CreatePageInner() {
                 )}
 
                 {carouselResult && (
-                  <section>
-                    <ExportToolbar
-                      icon={LayoutGrid} iconClass="text-cyan-400"
-                      artifactKind="carousel"
-                      title={carouselResult.title ?? 'Carousel Blueprint'}
-                      subtitle={`${carouselResult.slides?.length ?? 0} slides`}
-                      onCopy={() => copyJSON(carouselResult)}
-                      onExportJson={() => exportArtifact('json', carouselResult)}
-                      onExportHtml={() => exportArtifact('html', carouselResult)}
-                      onExportPdf={() => exportArtifact('pdf', carouselResult)}
-                      onExportPptx={() => exportArtifact('pptx', carouselResult)}
-                      onExportCanva={() => exportToCanva(carouselResult)}
-                      onExportFigma={() => exportToFigma(carouselResult)}
-                    />
+                  <section className="space-y-2">
                     <CarouselRenderer artifact={carouselResult} />
+                    <div className="flex justify-end">
+                      <ArtifactExportMenu kind="carousel" artifact={carouselResult} plainText={extractCarouselPlainText(carouselResult)} />
+                    </div>
                   </section>
                 )}
 
                 {deckResult && (
-                  <section>
-                    <ExportToolbar
-                      icon={Presentation} iconClass="text-indigo-400"
-                      artifactKind="deck"
-                      title={deckResult.title ?? 'Deck'}
-                      subtitle={`${deckResult.slides?.length ?? 0} slides`}
-                      onCopy={() => copyJSON(deckResult)}
-                      onExportJson={() => exportArtifact('json', deckResult)}
-                      onExportHtml={() => exportArtifact('html', deckResult)}
-                      onExportPdf={() => exportArtifact('pdf', deckResult)}
-                      onExportPptx={() => exportArtifact('pptx', deckResult)}
-                      onExportCanva={() => exportToCanva(deckResult)}
-                      onExportFigma={() => exportToFigma(deckResult)}
-                    />
+                  <section className="space-y-2">
                     <DeckRenderer artifact={deckResult} />
+                    <div className="flex justify-end">
+                      <ArtifactExportMenu kind="deck" artifact={deckResult} plainText={extractDeckPlainText(deckResult)} />
+                    </div>
                   </section>
                 )}
 
                 {reportResult && (
-                  <section>
-                    <ExportToolbar
-                      icon={BookOpen} iconClass="text-emerald-400"
-                      artifactKind="report"
-                      title={reportResult.title ?? 'Report'}
-                      subtitle={`${reportResult.sections?.length ?? 0} sections`}
-                      onCopy={() => copyJSON(reportResult)}
-                      onExportJson={() => exportArtifact('json', reportResult)}
-                      onExportHtml={() => exportArtifact('html', reportResult)}
-                      onExportPdf={() => exportArtifact('pdf', reportResult)}
-                      onExportPptx={() => exportArtifact('pptx', reportResult)}
-                      onExportCanva={() => exportToCanva(reportResult)}
-                      onExportFigma={() => exportToFigma(reportResult)}
-                    />
+                  <section className="space-y-2">
                     <ReportRenderer artifact={reportResult} />
+                    <div className="flex justify-end">
+                      <ArtifactExportMenu kind="report" artifact={reportResult} plainText={extractReportPlainText(reportResult)} />
+                    </div>
                   </section>
                 )}
 
                 {newsletterResult && (
-                  <section>
-                    <ExportToolbar
-                      icon={Mail} iconClass="text-blue-400"
-                      artifactKind="newsletter"
-                      title={newsletterResult.subject_line ?? newsletterResult.title ?? 'Newsletter'}
-                      subtitle={`${newsletterResult.sections?.length ?? 0} sections`}
-                      onCopy={() => copyJSON(newsletterResult)}
-                      onExportJson={() => exportArtifact('json', newsletterResult)}
-                      onExportHtml={() => exportArtifact('html', newsletterResult)}
-                      onExportPdf={() => exportArtifact('pdf', newsletterResult)}
-                      onExportPptx={() => {}}
-                      onExportCanva={() => {}}
-                      onExportFigma={() => {}}
-                    />
+                  <section className="space-y-2">
                     <NewsletterRenderer artifact={newsletterResult} />
+                    <div className="flex justify-end">
+                      <ArtifactExportMenu kind="newsletter" artifact={newsletterResult} plainText={extractNewsletterPlainText(newsletterResult)} />
+                    </div>
                   </section>
                 )}
 
@@ -1602,20 +1437,44 @@ function CreatePageInner() {
                   </section>
                 )}
 
-                {/* Plain-language status line — the primary trust signal on this
-                    screen (UX Redesign §13, §15). Replaces the old persistent
-                    Control Plane rail's score/retry badges with one sentence. */}
+                {/* Ambient confidence line (Iteration 3) — replaces every "Save"
+                    affordance. Generation already persisted a campaign row the
+                    instant it completed (see the SSE result handler), so this
+                    states that plainly instead of asking for a Save click. */}
                 {!anyLoading && hasResult && (
                   <div className="flex items-center gap-2 px-4 py-3 bg-emerald-950/20 border border-emerald-800/30 rounded-xl text-sm text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                    <span>{qualityStatusLine(statusLineCpData)}</span>
+                    <span>Autosaved to Library · {qualityStatusLine(statusLineCpData)}</span>
                   </div>
                 )}
 
-                {/* P3.28 — "Why this?" explainability panel.
-                    Shown when cpData is available (all non-free-text routes).
-                    Intent, routing rationale, quality score, and any fixes applied. */}
-                {!anyLoading && hasResult && cpData && <WhyThisPanel cpData={cpData} />}
+                {/* Inspect (Iteration 3) — the single consolidated home for
+                    Execution / Quality / Knowledge / Identity / Learning.
+                    Replaces WhyThisPanel, the per-slide/richness displays that
+                    used to live inside each renderer, and the Advanced rail's
+                    ControlPlanePanel + "Session details" card. Closed by
+                    default — see InspectPanel in @brandos/presentation-layer. */}
+                {!anyLoading && hasResult && (
+                  <InspectPanel sections={buildActiveInsightSections()} />
+                )}
+
+                {!anyLoading && hasResult && <RepurposeWidget />}
+
+                {/* P3: Cross-session persistence — save a resumable brief link.
+                    Unrelated to artifact autosave — this saves the *brief*
+                    (topic/format), not the generated result, so a user can
+                    pick a session back up later. */}
+                {!anyLoading && !savedCampaignId && prompt && selectedFormat && (
+                  <SaveBriefButton topic={prompt} format={selectedFormat} />
+                )}
+
+                {!anyLoading && savedCampaignId && (
+                  <p className="text-xs text-gray-600">
+                    In <span className="font-mono text-gray-500">Library</span> as
+                    <span className="font-mono text-gray-400"> #{savedCampaignId.slice(0, 8)}</span>.
+                    <button onClick={() => router.push('/workspace/library')} className="text-cyan-400 hover:text-cyan-300 underline ml-1">Open Library</button>.
+                  </p>
+                )}
 
                 {!anyLoading && (
                   <div className="flex items-center justify-between pt-2">
@@ -1624,79 +1483,52 @@ function CreatePageInner() {
                       <ChevronLeft className="w-3.5 h-3.5" /> Back
                     </button>
                     {hasResult && (
-                      <button
-                        onClick={() => setStep('save')}
-                        className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg font-semibold text-sm transition-all"
-                      >
-                        Continue to Save <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-4">
+                        {/* Regenerate — the one real "try again" recovery path,
+                            since slide-level editing is out of scope. Kept
+                            visually quiet (text weight) so it reads as the
+                            second action, not a peer of Export. */}
+                        <button
+                          onClick={() => {
+                            if (selectedFormat === 'carousel') { void generateCarousel(); return }
+                            generate(selectedFormat)
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs text-gray-400 hover:text-white transition-colors"
+                        >
+                          <Repeat className="w-3.5 h-3.5" /> Regenerate
+                        </button>
+                        <button
+                          onClick={() => {
+                            clearResults()
+                            setCampaignResults({})
+                            setPrompt('')
+                            setStep('what')
+                          }}
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold text-sm transition-all"
+                        >
+                          <Wand2 className="w-3.5 h-3.5" /> Create another
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
               </>
             )}
-
-            {/* ════════ STEP 4: SAVE ════════════════════════════════════════ */}
-            {step === 'save' && (
-              <section className="bg-gray-900/60 border border-gray-800 rounded-xl p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <h2 className="text-sm font-semibold text-gray-300">
-                    {hasResult ? 'Saved — export or get feedback' : 'Nothing to save yet'}
-                  </h2>
-                </div>
-
-                {savedCampaignId && (
-                  <p className="text-xs text-gray-500">
-                    Saved to Library as <span className="font-mono text-gray-400">#{savedCampaignId.slice(0, 8)}</span>.
-                    Find it anytime in <button onClick={() => router.push('/workspace/library')} className="text-cyan-400 hover:text-cyan-300 underline">Library</button>.
-                  </p>
-                )}
-
-                <FeedbackRow />
-
-                <RepurposeWidget />
-
-                {/* P3: Cross-session persistence — save brief for later */}
-                {!savedCampaignId && prompt && selectedFormat && (
-                  <SaveBriefButton topic={prompt} format={selectedFormat} />
-                )}
-
-                <div className="flex items-center justify-between pt-2">
-                  <button onClick={() => setStep('preview')}
-                    className="flex items-center gap-1 px-3 py-2 text-xs text-gray-400 hover:text-white transition-colors">
-                    <ChevronLeft className="w-3.5 h-3.5" /> Back
-                  </button>
-                  <button
-                    onClick={() => {
-                      clearResults()
-                      setCampaignResults({})
-                      setPrompt('')
-                      setStep('what')
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold text-sm transition-all"
-                  >
-                    <Wand2 className="w-3.5 h-3.5" /> Create another
-                  </button>
-                </div>
-              </section>
-            )}
           </div>
 
-          {/* ── Right column: Advanced (on-demand, Preview/Save only) ──────
+          {/* ── Right column: Advanced (on-demand, Review step only) ───────
               UX Redesign §12 Critical #1 & #2: this rail was previously
               persistent and expanded on every step, for every user, on
               every generation — the single largest source of "engineering
               tool" feel in the product, and the surface where a one-click
-              governance bypass sat as a peer of ordinary presets. Nothing
-              here is removed: runtime mode, model selection, quality level,
-              and session stats are all the same underlying controls,
-              relocated from "always on" to "opt-in, and only where the
-              decision is relevant" (Preview/Save, not What/About). See
-              also ControlPlanePanel.tsx, which now defaults to collapsed
-              and no longer offers "Raw Mode — bypass governance" as a
-              selectable option. */}
-          {(step === 'preview' || step === 'save') && !isOnboardingFirstRun && (
+              governance bypass sat as a peer of ordinary presets. Runtime
+              mode and model selection are real settings a user chooses, so
+              they stay here, opt-in. Iteration 3: ControlPlanePanel and the
+              "Session details" card are removed from this rail — they were
+              read-only inspection data, and that now lives in one place,
+              InspectPanel, next to the artifact instead of in a second,
+              separate technical surface. */}
+          {step === 'preview' && !isOnboardingFirstRun && (
             <div className="space-y-4">
               <AdvancedControlsDisclosure>
                 <div className="flex items-center justify-between">
@@ -1718,34 +1550,6 @@ function CreatePageInner() {
                   onTierChange={(tier) => changeMode(tier)}
                   onModelChange={(modelId) => setSelectedModel(modelId)}
                 />
-
-                <ControlPlanePanel
-                  cpData={cpData}
-                  isLoading={anyLoading}
-                  overrideMode={overrideMode}
-                  onModeChange={changeOverrideMode}
-                  streamingLog={streamingLog}
-                />
-
-                {outputResult && (
-                  <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
-                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Sparkles className="w-3 h-3" /> Session details
-                    </div>
-                    <div className="space-y-2 text-xs">
-                      {[
-                        { label: 'Artifact', value: outputResult.title ?? '—' },
-                        { label: 'Audience', value: outputResult.audience?.label ?? '—' },
-                        { label: 'Tone',     value: activeTone },
-                      ].map(row => (
-                        <div key={row.label} className="flex justify-between">
-                          <span className="text-gray-600">{row.label}</span>
-                          <span className="text-gray-300 font-mono">{String(row.value)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </AdvancedControlsDisclosure>
             </div>
           )}

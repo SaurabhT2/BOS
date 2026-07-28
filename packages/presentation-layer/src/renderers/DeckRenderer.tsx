@@ -8,6 +8,14 @@
  * Deterministic rendering — no semantic inference happens here.
  * All content comes from the artifact. Renderer displays what exists.
  *
+ * Iteration 3 (Artifact-first redesign): the generation_trace footer was
+ * removed (that data now flows into the Inspect panel via
+ * buildExecutionInsight — see ./insights.ts and apps/web's create/page.tsx).
+ * Slides moved from an accordion to SlideViewer, shared with CarouselRenderer,
+ * so the deck reads like a presentation — one slide filling the frame,
+ * advanced with prev/next, dots, arrow keys, or a swipe — rather than a
+ * stacked list of collapsed records.
+ *
  * Renders:
  *   - Artifact-level: title, theme, slide count
  *   - Per-slide: title, type badge, bullets, stats, speaker_notes, layout
@@ -15,8 +23,9 @@
  */
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, BarChart2, Copy, Check } from 'lucide-react'
+import { BarChart2, Copy, Check } from 'lucide-react'
 import type { DeckArtifact } from '@brandos/contracts'
+import { SlideViewer } from './shared/SlideViewer'
 
 // ─── Slide type metadata ───────────────────────────────────────────────────────
 
@@ -98,20 +107,16 @@ function DeckHeader({ artifact }: { artifact?: DeckArtifact }) {
   )
 }
 
-// ─── Slide card ───────────────────────────────────────────────────────────────
+// ─── Full-content slide ─────────────────────────────────────────────────────
 
-function DeckSlideCard({
+function DeckSlideContent({
   slide,
   index,
-  isExpanded,
-  onToggle,
   onCopy,
   isCopied,
 }: {
   slide: NonNullable<DeckArtifact['slides'][number]>
   index: number
-  isExpanded: boolean
-  onToggle: () => void
   onCopy: () => void
   isCopied: boolean
 }) {
@@ -120,106 +125,102 @@ function DeckSlideCard({
 
   return (
     <div className="border border-gray-800 rounded-xl overflow-hidden bg-gray-950">
-      <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-900/60 transition-colors"
-        onClick={onToggle}
-      >
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800/60">
         <div
           className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br ${gradient} flex-shrink-0`}
         >
           {index + 1}
         </div>
-        <div className="flex-1 min-w-0">
-          <span className={`text-xs font-semibold uppercase tracking-wider bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
-            {label}
-          </span>
-          <p className="text-sm text-white font-medium truncate mt-0.5">{slide.title}</p>
+        <span className={`text-xs font-semibold uppercase tracking-wider bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
+          {label}
+        </span>
+      </div>
+
+      <div className="px-4 pb-4 pt-4 space-y-4">
+        <div>
+          <p className="text-lg text-white font-semibold leading-snug">{slide.title}</p>
+          {slide.subtitle && (
+            <p className="text-sm text-gray-400 mt-1">{slide.subtitle}</p>
+          )}
         </div>
-        {isExpanded
-          ? <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" />
-          : <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
-        }
-      </button>
 
-      {isExpanded && (
-        <div className="px-4 pb-4 border-t border-gray-800/60 space-y-4 pt-3">
+        {slide.bullets && slide.bullets.length > 0 && (
+          <ul className="space-y-1.5">
+            {slide.bullets.map((b, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                <span className="text-cyan-500 mt-0.5 flex-shrink-0">→</span>
+                <span className="leading-relaxed">{b}</span>
+              </li>
+            ))}
+          </ul>
+        )}
 
+        {slide.body && (
+          <p className="text-sm text-gray-300 leading-relaxed">{slide.body}</p>
+        )}
+
+        {slide.stats && slide.stats.length > 0 && (
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Title</p>
-            <p className="text-sm text-white font-semibold leading-snug">{slide.title}</p>
-            {slide.subtitle && (
-              <p className="text-sm text-gray-400 mt-1">{slide.subtitle}</p>
-            )}
+            <div className="flex items-center gap-1.5 mb-2">
+              <BarChart2 className="w-3 h-3 text-emerald-400" />
+              <p className="text-xs text-emerald-400 uppercase tracking-wider">Stats</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {slide.stats.map((stat, i) => (
+                <div key={i} className="p-2 rounded-lg bg-gray-900 border border-gray-800">
+                  <p className="text-base font-bold text-emerald-400 tabular-nums">{stat.value}</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">{stat.label}</p>
+                  {stat.delta && (
+                    <p className="text-xs text-gray-600 mt-1">{stat.delta}</p>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
+        )}
 
-          {slide.bullets && slide.bullets.length > 0 && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Bullets</p>
-              <ul className="space-y-1.5">
-                {slide.bullets.map((b, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                    <span className="text-cyan-500 mt-0.5 flex-shrink-0">→</span>
-                    <span className="leading-relaxed">{b}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+        {slide.visual_direction && (
+          <div className="p-3 rounded-lg bg-gray-900 border border-gray-800">
+            <p className="text-xs text-amber-500 uppercase tracking-wider mb-1">Visual Direction</p>
+            <p className="text-xs text-gray-400 leading-relaxed">{slide.visual_direction}</p>
+          </div>
+        )}
 
-          {slide.body && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Body</p>
-              <p className="text-sm text-gray-300 leading-relaxed">{slide.body}</p>
-            </div>
-          )}
+        {slide.speaker_notes && (
+          <div className="p-3 rounded-lg bg-gray-900/50 border border-dashed border-gray-700">
+            <p className="text-xs text-gray-600 uppercase tracking-wider mb-1">Speaker Notes</p>
+            <p className="text-xs text-gray-500 italic leading-relaxed">{slide.speaker_notes}</p>
+          </div>
+        )}
 
-          {slide.stats && slide.stats.length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <BarChart2 className="w-3 h-3 text-emerald-400" />
-                <p className="text-xs text-emerald-400 uppercase tracking-wider">Stats</p>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {slide.stats.map((stat, i) => (
-                  <div key={i} className="p-2 rounded-lg bg-gray-900 border border-gray-800">
-                    <p className="text-base font-bold text-emerald-400 tabular-nums">{stat.value}</p>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">{stat.label}</p>
-                    {stat.delta && (
-                      <p className="text-xs text-gray-600 mt-1">{stat.delta}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {slide.visual_direction && (
-            <div className="p-3 rounded-lg bg-gray-900 border border-gray-800">
-              <p className="text-xs text-amber-500 uppercase tracking-wider mb-1">Visual Direction</p>
-              <p className="text-xs text-gray-400 leading-relaxed">{slide.visual_direction}</p>
-            </div>
-          )}
-
-          {slide.speaker_notes && (
-            <div className="p-3 rounded-lg bg-gray-900/50 border border-dashed border-gray-700">
-              <p className="text-xs text-gray-600 uppercase tracking-wider mb-1">Speaker Notes</p>
-              <p className="text-xs text-gray-500 italic leading-relaxed">{slide.speaker_notes}</p>
-            </div>
-          )}
-
-          <button
-            onClick={onCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
-          >
-            {isCopied
-              ? <><Check className="w-3 h-3 text-emerald-400" />Copied</>
-              : <><Copy className="w-3 h-3" />Copy slide text</>
-            }
-          </button>
-        </div>
-      )}
+        <button
+          onClick={onCopy}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
+        >
+          {isCopied
+            ? <><Check className="w-3 h-3 text-emerald-400" />Copied</>
+            : <><Copy className="w-3 h-3" />Copy slide text</>
+          }
+        </button>
+      </div>
     </div>
   )
+}
+
+// ─── Plain-text extraction ─────────────────────────────────────────────────
+// Consumed by apps/web's unified ExportMenu ("Copy as text").
+
+export function extractDeckPlainText(artifact: DeckArtifact): string {
+  const parts: (string | undefined)[] = [artifact.title, artifact.summary, '']
+  artifact.slides.forEach((slide, i) => {
+    parts.push(`${getSlideLabel(slide.type)} (${i + 1}): ${slide.title}`)
+    if (slide.subtitle) parts.push(slide.subtitle)
+    if (slide.body) parts.push(slide.body)
+    if (slide.bullets) parts.push(...slide.bullets.map(b => `• ${b}`))
+    if (slide.stats) parts.push(...slide.stats.map(s => `${s.value} — ${s.label}`))
+    parts.push('')
+  })
+  return parts.filter((p): p is string => Boolean(p)).join('\n')
 }
 
 // ─── Main renderer ────────────────────────────────────────────────────────────
@@ -230,7 +231,7 @@ interface DeckRendererProps {
 }
 
 export function DeckRenderer({ artifact, onCopySlide }: DeckRendererProps) {
-  const [expandedSlide, setExpandedSlide] = useState<number | null>(0)
+  const [activeIndex, setActiveIndex] = useState(0)
   const [copiedSlide, setCopiedSlide] = useState<number | null>(null)
 
   const handleCopy = (slide: DeckArtifact['slides'][number], index: number) => {
@@ -252,36 +253,25 @@ export function DeckRenderer({ artifact, onCopySlide }: DeckRendererProps) {
     <div className="space-y-4">
       <DeckHeader artifact={artifact} />
 
-      {artifact.slides.map((slide, index) => (
-        <DeckSlideCard
-          key={index}
-          slide={slide}
-          index={index}
-          isExpanded={expandedSlide === index}
-          onToggle={() => setExpandedSlide(expandedSlide === index ? null : index)}
-          onCopy={() => handleCopy(slide, index)}
-          isCopied={copiedSlide === index}
-        />
-      ))}
-
-      {artifact.generation_trace && (
-        <div className="text-[10px] text-gray-700 text-center pt-2 space-y-0.5">
-          <p>Generated {new Date(artifact.generation_trace.generated_at).toLocaleTimeString()}</p>
-          <p>
-            {artifact.generation_trace.governance_outcome === 'passed_after_repair'
-              ? `Repaired (${artifact.generation_trace.repair_attempts} attempt${artifact.generation_trace.repair_attempts !== 1 ? 's' : ''})`
-              : 'Passed governance'
-            }
-            {' · '}
-            {artifact.generation_trace.provider ?? 'unknown provider'}
-            {' · '}
-            {artifact.generation_trace.generation_mode ?? 'unknown mode'}
-          </p>
-        </div>
-      )}
+      <SlideViewer
+        count={artifact.slides.length}
+        activeIndex={activeIndex}
+        onChange={setActiveIndex}
+        itemLabel="Deck slide"
+        renderSlide={(i) => {
+          const slide = artifact.slides[i]
+          if (!slide) return null
+          return (
+            <DeckSlideContent
+              slide={slide}
+              index={i}
+              onCopy={() => handleCopy(slide, i)}
+              isCopied={copiedSlide === i}
+            />
+          )
+        }}
+      />
     </div>
   )
 }
 export default DeckRenderer
-
-

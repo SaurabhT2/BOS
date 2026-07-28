@@ -3,25 +3,34 @@
 /**
  * CarouselRenderer — renders a canonical CarouselArtifact.
  *
- * UPDATED: was CarouselBlueprint input, now CarouselArtifact.
- *
  * Deterministic rendering — no semantic inference happens here.
  * All content comes from the artifact. Renderer displays what exists.
  *
+ * Iteration 3 (Artifact-first redesign):
+ *   - Richness telemetry, per-slide density badges, and the generation_trace
+ *     footer were removed from this component. That data still exists — it
+ *     now flows through `buildExecutionInsight` / `buildQualityInsight`
+ *     (see ./insights.ts) into the Inspect panel, rendered by the caller
+ *     (apps/web) alongside this component rather than inside it. See
+ *     UX_IMPLEMENTATION_PROGRESS.md Phase 5 for the full rationale.
+ *   - Slides moved from an accordion (one open at a time, content hidden by
+ *     default) to SlideViewer — a single active slide shown at full content,
+ *     with prev/next, dot pagination, arrow-key and swipe navigation. The
+ *     artifact should look like the finished carousel, not a list of
+ *     collapsed records.
+ *
  * Renders:
  *   - Artifact-level: title, hook, summary, cta, narrative arc
- *   - Richness telemetry: overall_score, density, evidence, persuasion
  *   - Per-slide: headline, subheadline, body, bullets, insight, key_takeaway,
  *                supporting_evidence, cta, visual_direction, speaker_notes
- *   - Semantic density badge per slide
  */
 
 import { useState } from 'react'
 import {
-  ChevronDown, ChevronUp, Copy, Check,
-  Lightbulb, Target, BarChart2, BookOpen, Zap,
+  Copy, Check, Lightbulb, Target, BarChart2, BookOpen, Zap,
 } from 'lucide-react'
 import type { CarouselArtifact, RichCarouselSlide } from '@brandos/contracts'
+import { SlideViewer } from './shared/SlideViewer'
 
 // ─── Role metadata ────────────────────────────────────────────────────────────
 
@@ -45,34 +54,10 @@ const ROLE_LABELS: Record<RichCarouselSlide['role'], string> = {
   cta:       'CTA',
 }
 
-// ─── Score badge ──────────────────────────────────────────────────────────────
-
-function ScoreBadge({ value = 0, label = "" }: { value?: number; label?: string; children?: React.ReactNode }) {
-  const color = value >= 70 ? 'text-emerald-400' : value >= 40 ? 'text-amber-400' : 'text-red-400'
-  return (
-    <span className="flex flex-col items-center">
-      <span className={`text-base font-bold tabular-nums ${color}`}>{value}</span>
-      <span className="text-[10px] text-gray-500 uppercase tracking-widest">{label}</span>
-    </span>
-  )
-}
-
-// ─── Richness telemetry bar ───────────────────────────────────────────────────
-
-function RichnessBar({ score = 0 }: { score?: number; children?: React.ReactNode }) {
-  const color = score >= 70 ? 'bg-emerald-500' : score >= 40 ? 'bg-amber-500' : 'bg-red-500'
-  return (
-    <div className="w-full bg-gray-800 rounded-full h-1.5 mt-1">
-      <div className={`h-1.5 rounded-full transition-all ${color}`} style={{ width: `${score}%` }} />
-    </div>
-  )
-}
-
 // ─── Artifact-level header ────────────────────────────────────────────────────
 
-function ArtifactHeader({ artifact }: { artifact?: CarouselArtifact; children?: React.ReactNode }) {
+function ArtifactHeader({ artifact }: { artifact?: CarouselArtifact }) {
   if (!artifact) return null;
-  const m = artifact.richness_metrics
   return (
     <div className="border border-gray-700 rounded-xl bg-gray-950 p-4 mb-4 space-y-3">
       {/* Title + hook */}
@@ -102,24 +87,8 @@ function ArtifactHeader({ artifact }: { artifact?: CarouselArtifact; children?: 
         )}
       </div>
 
-      {/* Richness metrics */}
-      <div className="border-t border-gray-800 pt-3">
-        <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Semantic Richness</p>
-        <div className="grid grid-cols-4 gap-3">
-          <ScoreBadge value={m.overall_score} label="Overall" />
-          <ScoreBadge value={m.density_score} label="Density" />
-          <ScoreBadge value={m.evidence_score} label="Evidence" />
-          <ScoreBadge value={m.persuasion_score} label="Persuasion" />
-        </div>
-        <RichnessBar score={m.overall_score} />
-        <div className="flex justify-between text-[10px] text-gray-600 mt-1">
-          <span>{m.total_content_words} words total</span>
-          <span>{m.avg_words_per_unit} avg/slide</span>
-          <span>CTA quality: {m.cta_quality_score}</span>
-        </div>
-      </div>
-
-      {/* CTA pill */}
+      {/* CTA — a customer-facing part of the deliverable, kept above any
+          measurement of the deliverable (see Iteration 2 §F.9/§E) */}
       {artifact.cta && (
         <div className="flex items-center gap-2">
           <Target className="w-3 h-3 text-cyan-500 flex-shrink-0" />
@@ -148,218 +117,172 @@ function ArtifactHeader({ artifact }: { artifact?: CarouselArtifact; children?: 
   )
 }
 
-// ─── Rich slide expander ──────────────────────────────────────────────────────
+// ─── Full-content slide (always fully shown — this is SlideViewer's active slide) ──
 
-function SlideCard({
+function SlideContent({
   slide,
-  isExpanded = false,
-  onToggle = () => {},
-  onCopy = () => {},
-  isCopied = false,
+  onCopy,
+  isCopied,
 }: {
   slide?: RichCarouselSlide
-  isExpanded?: boolean
-  onToggle?: () => void
   onCopy?: () => void
   isCopied?: boolean
-  children?: React.ReactNode
 }) {
   if (!slide) return null;
   const gradient = ROLE_COLORS[slide.role]
-  const density = slide.semantic_density_score ?? 0
-  const densityColor = density >= 60 ? 'text-emerald-400' : density >= 30 ? 'text-amber-400' : 'text-red-400'
 
   return (
     <div className="border border-gray-800 rounded-xl overflow-hidden bg-gray-950">
-      {/* Header */}
-      <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-900/60 transition-colors"
-        onClick={onToggle}
-      >
+      {/* Slide identity */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800/60">
         <div
           className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br ${gradient} flex-shrink-0`}
         >
           {slide.slide}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-semibold uppercase tracking-wider bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
-              {ROLE_LABELS[slide.role]}
-            </span>
-            {/* Density badge */}
-            <span className={`text-[10px] tabular-nums ${densityColor}`}>
-              {density > 0 && `${density}d`}
-            </span>
-          </div>
-          <p className="text-sm text-white font-medium truncate mt-0.5">{slide.headline}</p>
+        <span className={`text-xs font-semibold uppercase tracking-wider bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
+          {ROLE_LABELS[slide.role]}
+        </span>
+      </div>
+
+      <div className="px-4 pb-4 pt-4 space-y-4">
+        {/* Headline */}
+        <div>
+          <p className="text-lg text-white font-semibold leading-snug">{slide.headline}</p>
+          {slide.subheadline && (
+            <p className="text-sm text-gray-400 mt-1 leading-snug">{slide.subheadline}</p>
+          )}
         </div>
-        {isExpanded
-          ? <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" />
-          : <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
-        }
-      </button>
 
-      {/* Expanded content */}
-      {isExpanded && (
-        <div className="px-4 pb-4 border-t border-gray-800/60 space-y-4 pt-3">
+        {/* Body */}
+        {slide.body && (
+          <p className="text-sm text-gray-300 leading-relaxed">{slide.body}</p>
+        )}
 
-          {/* Headline */}
+        {/* Bullets */}
+        {slide.bullets && slide.bullets.length > 0 && (
+          <ul className="space-y-1.5">
+            {slide.bullets.map((b, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
+                <span className="text-cyan-500 mt-0.5 flex-shrink-0">→</span>
+                <span className="leading-relaxed">{b}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Insight */}
+        {slide.insight && (
+          <div className="p-3 rounded-lg bg-violet-950/30 border border-violet-800/30">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Lightbulb className="w-3 h-3 text-violet-400" />
+              <p className="text-xs text-violet-400 uppercase tracking-wider font-medium">Insight</p>
+            </div>
+            <p className="text-sm text-gray-200 leading-relaxed">{slide.insight}</p>
+          </div>
+        )}
+
+        {/* Supporting evidence */}
+        {slide.supporting_evidence && slide.supporting_evidence.length > 0 && (
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Headline</p>
-            <p className="text-sm text-white font-semibold leading-snug">{slide.headline}</p>
-            {slide.subheadline && (
-              <p className="text-sm text-gray-400 mt-1 leading-snug">{slide.subheadline}</p>
-            )}
-          </div>
-
-          {/* Body */}
-          {slide.body && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Body</p>
-              <p className="text-sm text-gray-300 leading-relaxed">{slide.body}</p>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <BarChart2 className="w-3 h-3 text-emerald-400" />
+              <p className="text-xs text-emerald-400 uppercase tracking-wider">Evidence</p>
             </div>
-          )}
-
-          {/* Bullets */}
-          {slide.bullets && slide.bullets.length > 0 && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Bullets</p>
-              <ul className="space-y-1.5">
-                {slide.bullets.map((b, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                    <span className="text-cyan-500 mt-0.5 flex-shrink-0">→</span>
-                    <span className="leading-relaxed">{b}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Insight */}
-          {slide.insight && (
-            <div className="p-3 rounded-lg bg-violet-950/30 border border-violet-800/30">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Lightbulb className="w-3 h-3 text-violet-400" />
-                <p className="text-xs text-violet-400 uppercase tracking-wider font-medium">Insight</p>
-              </div>
-              <p className="text-sm text-gray-200 leading-relaxed">{slide.insight}</p>
-            </div>
-          )}
-
-          {/* Supporting evidence */}
-          {slide.supporting_evidence && slide.supporting_evidence.length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <BarChart2 className="w-3 h-3 text-emerald-400" />
-                <p className="text-xs text-emerald-400 uppercase tracking-wider">Evidence</p>
-              </div>
-              <ul className="space-y-1">
-                {slide.supporting_evidence.map((e, i) => (
-                  <li key={i} className="text-xs text-gray-400 leading-relaxed pl-3 border-l border-emerald-700">
-                    {e}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Key takeaway */}
-          {slide.key_takeaway && (
-            <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-800/30">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Zap className="w-3 h-3 text-cyan-400" />
-                <p className="text-xs text-cyan-400 uppercase tracking-wider font-medium">Key Takeaway</p>
-              </div>
-              <p className="text-sm text-white font-medium leading-snug">{slide.key_takeaway}</p>
-            </div>
-          )}
-
-          {/* Slide CTA */}
-          {slide.cta && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Slide CTA</p>
-              <p className="text-sm text-cyan-400 font-medium">{slide.cta}</p>
-            </div>
-          )}
-
-          {/* Visual direction */}
-          {slide.visual_direction && (
-            <div className="p-3 rounded-lg bg-gray-900 border border-gray-800">
-              <p className="text-xs text-amber-500 uppercase tracking-wider mb-1">Visual Direction</p>
-              <p className="text-xs text-gray-400 leading-relaxed">{slide.visual_direction}</p>
-            </div>
-          )}
-
-          {/* Emphasis keywords */}
-          {slide.emphasis_keywords && slide.emphasis_keywords.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {slide.emphasis_keywords.map((k, i) => (
-                <span key={i} className="px-2 py-0.5 rounded-full bg-gray-800 text-xs text-gray-400 border border-gray-700">
-                  {k}
-                </span>
+            <ul className="space-y-1">
+              {slide.supporting_evidence.map((e, i) => (
+                <li key={i} className="text-xs text-gray-400 leading-relaxed pl-3 border-l border-emerald-700">
+                  {e}
+                </li>
               ))}
-            </div>
-          )}
+            </ul>
+          </div>
+        )}
 
-          {/* Speaker notes */}
-          {slide.speaker_notes && (
-            <div className="p-3 rounded-lg bg-gray-900/50 border border-dashed border-gray-700">
-              <p className="text-xs text-gray-600 uppercase tracking-wider mb-1">Speaker Notes</p>
-              <p className="text-xs text-gray-500 italic leading-relaxed">{slide.speaker_notes}</p>
+        {/* Key takeaway */}
+        {slide.key_takeaway && (
+          <div className="p-3 rounded-lg bg-cyan-950/30 border border-cyan-800/30">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Zap className="w-3 h-3 text-cyan-400" />
+              <p className="text-xs text-cyan-400 uppercase tracking-wider font-medium">Key Takeaway</p>
             </div>
-          )}
+            <p className="text-sm text-white font-medium leading-snug">{slide.key_takeaway}</p>
+          </div>
+        )}
 
-          {/* Semantic scores */}
-          {(slide.semantic_density_score !== undefined || slide.persuasion_score !== undefined) && (
-            <div className="flex gap-4 pt-1 border-t border-gray-800">
-              {slide.semantic_density_score !== undefined && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider">Density</p>
-                  <p className={`text-sm font-bold tabular-nums ${densityColor}`}>
-                    {slide.semantic_density_score}
-                  </p>
-                </div>
-              )}
-              {slide.persuasion_score !== undefined && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider">Persuasion</p>
-                  <p className={`text-sm font-bold tabular-nums ${
-                    (slide.persuasion_score ?? 0) >= 60 ? 'text-emerald-400' :
-                    (slide.persuasion_score ?? 0) >= 30 ? 'text-amber-400' : 'text-red-400'
-                  }`}>
-                    {slide.persuasion_score}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+        {/* Slide CTA */}
+        {slide.cta && (
+          <p className="text-sm text-cyan-400 font-medium">{slide.cta}</p>
+        )}
 
-          {/* Copy button */}
-          <button
-            onClick={onCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
-          >
-            {isCopied
-              ? <><Check className="w-3 h-3 text-emerald-400" />Copied</>
-              : <><Copy className="w-3 h-3" />Copy slide text</>
-            }
-          </button>
-        </div>
-      )}
+        {/* Visual direction */}
+        {slide.visual_direction && (
+          <div className="p-3 rounded-lg bg-gray-900 border border-gray-800">
+            <p className="text-xs text-amber-500 uppercase tracking-wider mb-1">Visual Direction</p>
+            <p className="text-xs text-gray-400 leading-relaxed">{slide.visual_direction}</p>
+          </div>
+        )}
+
+        {/* Emphasis keywords */}
+        {slide.emphasis_keywords && slide.emphasis_keywords.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {slide.emphasis_keywords.map((k, i) => (
+              <span key={i} className="px-2 py-0.5 rounded-full bg-gray-800 text-xs text-gray-400 border border-gray-700">
+                {k}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Speaker notes */}
+        {slide.speaker_notes && (
+          <div className="p-3 rounded-lg bg-gray-900/50 border border-dashed border-gray-700">
+            <p className="text-xs text-gray-600 uppercase tracking-wider mb-1">Speaker Notes</p>
+            <p className="text-xs text-gray-500 italic leading-relaxed">{slide.speaker_notes}</p>
+          </div>
+        )}
+
+        {/* Copy button — contextual, per-slide utility; not a page-level action */}
+        <button
+          onClick={onCopy}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors"
+        >
+          {isCopied
+            ? <><Check className="w-3 h-3 text-emerald-400" />Copied</>
+            : <><Copy className="w-3 h-3" />Copy slide text</>
+          }
+        </button>
+      </div>
     </div>
   )
+}
+
+// ─── Plain-text extraction ─────────────────────────────────────────────────
+// Consumed by apps/web's unified ExportMenu ("Copy as text") — see
+// NewsletterRenderer.tsx's extractNewsletterPlainText for the parallel case.
+
+export function extractCarouselPlainText(artifact: CarouselArtifact): string {
+  const parts: (string | undefined)[] = [artifact.title, artifact.hook, artifact.summary, '']
+  for (const slide of artifact.slides) {
+    parts.push(`${ROLE_LABELS[slide.role]}: ${slide.headline}`)
+    if (slide.subheadline) parts.push(slide.subheadline)
+    if (slide.body) parts.push(slide.body)
+    if (slide.bullets) parts.push(...slide.bullets.map(b => `• ${b}`))
+    parts.push('')
+  }
+  if (artifact.cta) parts.push(artifact.cta)
+  return parts.filter((p): p is string => Boolean(p)).join('\n')
 }
 
 // ─── Main renderer ────────────────────────────────────────────────────────────
 
 interface CarouselRendererProps {
-  /** UPDATED: accepts full CarouselArtifact, not CarouselBlueprint */
   artifact: CarouselArtifact
   onCopySlide?: (slide: RichCarouselSlide) => void
 }
 
 export function CarouselRenderer({ artifact, onCopySlide }: CarouselRendererProps) {
-  const [expandedSlide, setExpandedSlide] = useState<number | null>(1)
+  const [activeIndex, setActiveIndex] = useState(0)
   const [copiedSlide, setCopiedSlide] = useState<number | null>(null)
 
   const handleCopy = (slide: RichCarouselSlide) => {
@@ -373,40 +296,25 @@ export function CarouselRenderer({ artifact, onCopySlide }: CarouselRendererProp
 
   return (
     <div className="space-y-4">
-      {/* Artifact-level header with richness telemetry */}
       <ArtifactHeader artifact={artifact} />
 
-      {/* Slides */}
-      {artifact.slides.map(slide => (
-        <SlideCard
-          key={slide.slide}
-          slide={slide}
-          isExpanded={expandedSlide === slide.slide}
-          onToggle={() => setExpandedSlide(expandedSlide === slide.slide ? null : slide.slide)}
-          onCopy={() => handleCopy(slide)}
-          isCopied={copiedSlide === slide.slide}
-        />
-      ))}
-
-      {/* Generation trace footer */}
-      {artifact.generation_trace && (
-        <div className="text-[10px] text-gray-700 text-center pt-2 space-y-0.5">
-          <p>Generated {new Date(artifact.generation_trace.generated_at).toLocaleTimeString()}</p>
-          <p>
-            {artifact.generation_trace.governance_outcome === 'passed_after_repair'
-              ? `Repaired (${artifact.generation_trace.repair_attempts} attempt${artifact.generation_trace.repair_attempts !== 1 ? 's' : ''})`
-              : 'Passed governance'
-            }
-            {' · '}
-            {artifact.generation_trace.provider ?? 'unknown provider'}
-            {' · '}
-            {artifact.generation_trace.generation_mode ?? 'unknown mode'}
-          </p>
-        </div>
-      )}
+      <SlideViewer
+        count={artifact.slides.length}
+        activeIndex={activeIndex}
+        onChange={setActiveIndex}
+        itemLabel="Slide"
+        renderSlide={(i) => {
+          const slide = artifact.slides[i]
+          return (
+            <SlideContent
+              slide={slide}
+              onCopy={() => slide && handleCopy(slide)}
+              isCopied={slide ? copiedSlide === slide.slide : false}
+            />
+          )
+        }}
+      />
     </div>
   )
 }
 export default CarouselRenderer
-
-

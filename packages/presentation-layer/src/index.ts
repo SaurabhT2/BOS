@@ -22,9 +22,13 @@ export type { RecoveryBannerProps } from './components/RecoveryBanner'
 
 // ─── Renderers (Wave 2: Deck and Report added) ────────────────────────────────
 export { default as CarouselRenderer } from './renderers/CarouselRenderer'
+export { extractCarouselPlainText } from './renderers/CarouselRenderer'
 export { default as DeckRenderer }     from './renderers/DeckRenderer'
+export { extractDeckPlainText } from './renderers/DeckRenderer'
 export { default as ReportRenderer }   from './renderers/ReportRenderer'
+export { extractReportPlainText } from './renderers/ReportRenderer'
 export { default as NewsletterRenderer } from './renderers/NewsletterRenderer'
+export { extractNewsletterPlainText } from './renderers/NewsletterRenderer'
 
 // ─── Renderer Registry (Wave 2) ───────────────────────────────────────────────
 // Consumers can register custom renderers or resolve the correct component
@@ -51,5 +55,31 @@ export type { ControlPlaneData } from './types/controlPlane'
 
 // Control Plane
 export { default as ControlPlanePanel } from './components/ControlPlanePanel'
+
+// ─── Artifact-first review experience (Iteration 3) ───────────────────────────
+// InspectPanel consolidates what used to be three separate technical surfaces
+// (inline richness metrics, per-slide density badges, generation_trace
+// footer) plus apps/web's WhyThisPanel and Advanced-rail session details into
+// one collapsed-by-default panel. ExportMenu replaces the previous
+// Copy / Export / More-options button cluster with one dominant action.
+// See UX_IMPLEMENTATION_PROGRESS.md Phase 5 for the full rationale.
+export { default as InspectPanel } from './components/InspectPanel'
+export type { InspectPanelProps } from './components/InspectPanel'
+export { default as ExportMenu } from './components/ExportMenu'
+export type { ExportMenuProps, ExportFormatOption } from './components/ExportMenu'
+export {
+  buildExecutionInsight,
+  buildQualityInsight,
+  buildLearningInsight,
+} from './components/insights'
+export type {
+  ArtifactInsightSections,
+  ExecutionInsight,
+  QualityInsight,
+  QualityScore,
+  KnowledgeItem,
+  IdentityInsight,
+  LearningInsight,
+} from './components/insights'
 
 
