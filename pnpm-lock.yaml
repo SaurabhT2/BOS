@@ -337,6 +337,31 @@ importers:
         specifier: ^6.0.0
         version: 6.0.3
 
+  packages/composition-layer:
+    dependencies:
+      '@brandos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@brandos/design-tokens':
+        specifier: workspace:*
+        version: link:../design-tokens
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@vitest/coverage-v8':
+        specifier: ^2.0.5
+        version: 2.1.9(@vitest/browser@2.1.9)(vitest@2.1.9)
+      rimraf:
+        specifier: ^5.0.0
+        version: 5.0.10
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@20.19.43)(@vitest/browser@2.1.9)(jsdom@29.1.1)(msw@2.15.0(@types/node@20.19.43)(typescript@6.0.3))(terser@5.49.0)
+
   packages/contracts:
     dependencies:
       '@platform/cognition-contract':
@@ -415,6 +440,24 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^2.0.0
+        version: 2.1.9(@types/node@20.19.43)(@vitest/browser@2.1.9)(jsdom@29.1.1)(msw@2.15.0(@types/node@20.19.43)(typescript@6.0.3))(terser@5.49.0)
+
+  packages/design-tokens:
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@vitest/coverage-v8':
+        specifier: ^2.0.5
+        version: 2.1.9(@vitest/browser@2.1.9)(vitest@2.1.9)
+      rimraf:
+        specifier: ^5.0.0
+        version: 5.0.10
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^2.0.5
         version: 2.1.9(@types/node@20.19.43)(@vitest/browser@2.1.9)(jsdom@29.1.1)(msw@2.15.0(@types/node@20.19.43)(typescript@6.0.3))(terser@5.49.0)
 
   packages/governance-config:

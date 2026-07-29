@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "composite": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../design-tokens" }
+  ],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

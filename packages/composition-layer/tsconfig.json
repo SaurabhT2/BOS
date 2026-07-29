@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["node"]
+  },
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../design-tokens" }
+  ],
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "src/__tests__"]
+}
