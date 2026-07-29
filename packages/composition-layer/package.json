@@ -1,0 +1,33 @@
+{
+  "name": "@brandos/composition-layer",
+  "version": "1.0.0",
+  "description": "Rendering V2 Phase 2 — the one place ArtifactV2's presentation-intent fields (semantic_theme, carousel_meta.palette/font_style, layout_hint, emphasis_keywords) are read and resolved into a renderer-agnostic CompositionDocument. See COMPOSITION_MODEL.md.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brandos/contracts": "workspace:*",
+    "@brandos/design-tokens": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^2.0.5",
+    "rimraf": "^5.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^2.0.5"
+  }
+}

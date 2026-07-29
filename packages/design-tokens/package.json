@@ -1,0 +1,30 @@
+{
+  "name": "@brandos/design-tokens",
+  "version": "1.0.0",
+  "description": "Zero-dependency design-token vocabulary (color roles, type scale, spacing scale, radii, named visual presets) — Rendering V2 Phase 1. Consumed by @brandos/composition-layer's theme resolution; owns values, never resolution logic.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^2.0.5",
+    "rimraf": "^5.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^2.0.5"
+  }
+}

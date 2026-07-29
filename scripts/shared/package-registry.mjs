@@ -68,6 +68,8 @@ export function isInternalPackage(name) {
 export const LAYER_TIERS = [
   ['@platform/cognition-contract'],                                                 // L0 — cross-platform contract, zero deps (shared with IntelligenceOS)
   ['@brandos/contracts'],                                                           // L1 — zero-dep shared types
+  ['@brandos/design-tokens'],                                                       // L1.5 — zero-dep rendering value vocabulary (Rendering V2 Phase 1)
+  ['@brandos/composition-layer'],                                                   // L1.75 — theme/layout resolution + CompositionDocument (Rendering V2 Phase 2). Depends only on contracts (ArtifactV2 types) + design-tokens — deliberately NOT on governance/artifact-engine-layer, since it consumes an already-governed artifact object at runtime, not the package that produced it. See COMPOSITION_MODEL.md §3.6.
   ['@brandos/shared-utils'],                                                        // L2 — infrastructure helpers
   ['@brandos/cognition-client'],                                                    // L3 — sole holder of a concrete CognitionProvider instance
   ['@brandos/auth'],                                                                // L4 — authentication
@@ -92,6 +94,8 @@ export const KNOWN_PACKAGES = [
   // L0-L2: Foundation
   { name: '@platform/cognition-contract',   dir: 'packages/cognition-contract' },
   { name: '@brandos/contracts',             dir: 'packages/contracts' },
+  { name: '@brandos/design-tokens',         dir: 'packages/design-tokens' },
+  { name: '@brandos/composition-layer',     dir: 'packages/composition-layer' },
   { name: '@brandos/shared-utils',          dir: 'packages/shared-utils' },
   // L3: Cognition client
   { name: '@brandos/cognition-client',      dir: 'packages/cognition-client' },
@@ -125,6 +129,8 @@ export const KNOWN_PACKAGES = [
 export const PACKAGE_SRC_MAP = {
   '@platform/cognition-contract':   'packages/cognition-contract/src',
   '@brandos/contracts':             'packages/contracts/src',
+  '@brandos/design-tokens':         'packages/design-tokens/src',
+  '@brandos/composition-layer':     'packages/composition-layer/src',
   '@brandos/shared-utils':          'packages/shared-utils/src',
   '@brandos/cognition-client':      'packages/cognition-client/src',
   '@brandos/auth':                  'packages/auth/src',
