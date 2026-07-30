@@ -23,6 +23,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
+    "@brandos/composition-layer": "workspace:*",
     "@brandos/contracts": "workspace:*",
     "@brandos/shared-utils": "workspace:*",
     "lucide-react": "0.468.0"

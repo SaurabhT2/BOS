@@ -69,12 +69,18 @@ importers:
       '@brandos/cognition-client':
         specifier: workspace:*
         version: link:../../packages/cognition-client
+      '@brandos/composition-layer':
+        specifier: workspace:*
+        version: link:../../packages/composition-layer
       '@brandos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@brandos/control-plane-layer':
         specifier: workspace:*
         version: link:../../packages/control-plane-layer
+      '@brandos/design-tokens':
+        specifier: workspace:*
+        version: link:../../packages/design-tokens
       '@brandos/governance-config':
         specifier: workspace:*
         version: link:../../packages/governance-config
@@ -568,6 +574,9 @@ importers:
 
   packages/presentation-layer:
     dependencies:
+      '@brandos/composition-layer':
+        specifier: workspace:*
+        version: link:../composition-layer
       '@brandos/contracts':
         specifier: workspace:*
         version: link:../contracts
