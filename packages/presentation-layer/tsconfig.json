@@ -25,6 +25,9 @@
       "path": "../contracts"
     },
     {
+      "path": "../composition-layer"
+    },
+    {
       "path": "../shared-utils"
     },
     {

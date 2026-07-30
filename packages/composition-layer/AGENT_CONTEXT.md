@@ -1,9 +1,9 @@
 # AGENT_CONTEXT — @brandos/composition-layer
 
 **Layer:** L1.75 — Composition (Rendering V2)
-**Maturity:** New (Rendering V2 Phase 2)
+**Maturity:** New (Rendering V2 Phase 2; first real consumers wired in Phase 3)
 **Build order position:** inserted after `@brandos/design-tokens`, before `@brandos/shared-utils`
-**Last updated:** Rendering V2 Phase 2
+**Last updated:** Rendering V2 Phase 3
 
 > Depends only on `@brandos/contracts` (for `ArtifactV2` types) and `@brandos/design-tokens`. Deliberately NOT dependent on `@brandos/governance-layer` or `@brandos/artifact-engine-layer` — this package consumes an already-governed artifact object at runtime; it never imports the packages that produce one.
 
@@ -58,3 +58,12 @@ Two dependencies only: `@brandos/contracts` (types), `@brandos/design-tokens` (v
 `vitest run` (`pnpm --filter @brandos/composition-layer test`). **Important repo-wide finding surfaced while building this package's tests:** the standard `tsconfig.json`/`typecheck` pattern used across this repo excludes `__tests__` from `tsc --noEmit`, and vitest's esbuild transform does not type-check either — meaning test fixtures can silently drift out of sync with the schema with no tooling ever catching it (confirmed: `packages/presentation-layer/__tests__/contract/renderers.contract.test.ts`'s `REPORT_FIXTURE`/`BASE_FIELDS` use field names — `section`/`type: 'executive_summary'`/`title`, `primary_role`/`seniority_level`, `arc_type`/`tension`/`key_insight` — that do not exist anywhere on the current schema, and this has never been caught). This package adds `tsconfig.typecheck.json` (included via the `typecheck` script) specifically to include test files in type-checking, and it immediately caught a real error in this package's own fixtures during development. Recommend this pattern be adopted repo-wide as a separate, small hygiene task — out of scope for Rendering V2 itself, noted here for visibility.
 
 Coverage thresholds: 90% statements/functions/lines, 85% branches. Current actuals: 99.65% statements, 92% branches, 100% functions/lines.
+
+---
+
+## Consumers (as of Phase 3)
+
+- **`apps/web/lib/artifact-export-html.ts`** — `renderCarouselToHTMLComposed()`. Carousel only; deck/report/newsletter remain on their legacy renderers regardless of the flag. Gated behind `process.env.RENDERING_V2_COMPOSITION_HTML === 'true'` (default off/legacy). Falls back to the legacy renderer on any error from this package, rather than surfacing a failure to an export request. **Also affects PDF exports** until Phase 4 gives PDF its own independent template — PDF renders the same HTML this function produces.
+- **`packages/presentation-layer/src/renderers/CarouselRenderer.tsx`** (Studio) — `resolveTheme()` only, not the full `CompositionDocument`/block model (see this document's §"Non-Responsibilities" and `COMPOSITION_MODEL.md` §9 for why that's the correct scope for an editing surface). Always on, not flag-gated — replacing a hardcoded per-role Tailwind gradient with the artifact's actual resolved theme colors has no legacy behavior worth preserving behind a flag.
+
+No other package imports this one yet. Deck/report/newsletter HTML migration, the independent PDF renderer, and the PPTX/Canva migrations are Roadmap Phases 4–6 and remain unstarted.

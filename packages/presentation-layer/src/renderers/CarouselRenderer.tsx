@@ -30,19 +30,20 @@ import {
   Copy, Check, Lightbulb, Target, BarChart2, BookOpen, Zap,
 } from 'lucide-react'
 import type { CarouselArtifact, RichCarouselSlide } from '@brandos/contracts'
+import { resolveTheme, type ResolvedTheme } from '@brandos/composition-layer'
 import { SlideViewer } from './shared/SlideViewer'
 
 // ─── Role metadata ────────────────────────────────────────────────────────────
-
-const ROLE_COLORS: Record<RichCarouselSlide['role'], string> = {
-  hook:      'from-cyan-500 to-blue-600',
-  problem:   'from-red-500 to-rose-600',
-  reframe:   'from-violet-500 to-purple-600',
-  framework: 'from-amber-500 to-orange-600',
-  evidence:  'from-emerald-500 to-teal-600',
-  insight:   'from-pink-500 to-rose-600',
-  cta:       'from-cyan-500 to-blue-600',
-}
+//
+// RENDERING V2 PHASE 3: role→color is no longer a hardcoded gradient table.
+// Studio now calls the same resolveTheme() the export renderers use (see
+// COMPOSITION_MODEL.md §9 and RENDERING_ROADMAP_V2.md Phase 3) — the palette
+// swatch this component already displayed below (see the "Palette" row in
+// ArtifactHeader) is now the theme actually driving the slide badge color,
+// closing the "Studio shows it, exports ignore it" gap the review flagged.
+// This is a narrower integration than the full CompositionDocument/block
+// model — see COMPOSITION_MODEL.md §9 for why Studio consumes ResolvedTheme
+// only, not the full model, in this phase.
 
 const ROLE_LABELS: Record<RichCarouselSlide['role'], string> = {
   hook:      'Hook',
@@ -121,26 +122,32 @@ function ArtifactHeader({ artifact }: { artifact?: CarouselArtifact }) {
 
 function SlideContent({
   slide,
+  theme,
   onCopy,
   isCopied,
 }: {
   slide?: RichCarouselSlide
+  theme: ResolvedTheme
   onCopy?: () => void
   isCopied?: boolean
 }) {
   if (!slide) return null;
-  const gradient = ROLE_COLORS[slide.role]
+  const badgeGradient = `linear-gradient(135deg, ${theme.palette.primary}, ${theme.palette.accent})`
 
   return (
     <div className="border border-gray-800 rounded-xl overflow-hidden bg-gray-950">
       {/* Slide identity */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800/60">
         <div
-          className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br ${gradient} flex-shrink-0`}
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+          style={{ background: badgeGradient }}
         >
           {slide.slide}
         </div>
-        <span className={`text-xs font-semibold uppercase tracking-wider bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
+        <span
+          className="text-xs font-semibold uppercase tracking-wider bg-clip-text text-transparent"
+          style={{ backgroundImage: badgeGradient }}
+        >
           {ROLE_LABELS[slide.role]}
         </span>
       </div>
@@ -285,6 +292,11 @@ export function CarouselRenderer({ artifact, onCopySlide }: CarouselRendererProp
   const [activeIndex, setActiveIndex] = useState(0)
   const [copiedSlide, setCopiedSlide] = useState<number | null>(null)
 
+  // Resolved once per artifact, not per slide/render — matches
+  // resolveTheme()'s own "exactly once per (artifact, theme) pair" contract
+  // (COMPOSITION_MODEL.md §3.1).
+  const theme = resolveTheme(artifact)
+
   const handleCopy = (slide: RichCarouselSlide) => {
     const parts = [slide.headline, slide.subheadline, slide.body, ...(slide.bullets ?? [])].filter(Boolean)
     const text = parts.join('\n\n')
@@ -308,6 +320,7 @@ export function CarouselRenderer({ artifact, onCopySlide }: CarouselRendererProp
           return (
             <SlideContent
               slide={slide}
+              theme={theme}
               onCopy={() => slide && handleCopy(slide)}
               isCopied={slide ? copiedSlide === slide.slide : false}
             />
