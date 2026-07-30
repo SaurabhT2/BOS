@@ -43,12 +43,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabase-server'
 import {
-  renderArtifactToHTML,
   safeFilenameStem,
   type SupportedHtmlArtifactType,
 } from '@/lib/artifact-export-html'
-import { renderArtifactToPDF } from '@/lib/artifact-export-pdf'
-import { renderArtifactToPPTX, type SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
+import { dispatchHtmlExport, dispatchPdfExport, dispatchPptxExport } from '@/lib/registry-dispatch'
+import type { SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
 import { importArtifactToCanvaFallback } from '@/lib/canva-export'
 import { isCanvaFieldRendererAvailable, submitAutofillJob } from '@/lib/canva-field-renderer'
 import type { CarouselArtifact } from '@brandos/contracts'
@@ -226,7 +225,7 @@ export async function POST(req: NextRequest) {
 
   try {
     if (fmt === 'html') {
-      const html = renderArtifactToHTML(bp, artifactType)
+      const html = await dispatchHtmlExport(bp, artifactType)
       return new NextResponse(html, {
         status: 200,
         headers: {
@@ -250,7 +249,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (fmt === 'pdf') {
-      const { bytes } = await renderArtifactToPDF(bp, artifactType)
+      const { bytes } = await dispatchPdfExport(bp, artifactType)
       return new NextResponse(new Uint8Array(bytes), {
         status: 200,
         headers: {
@@ -270,7 +269,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         )
       }
-      const { bytes } = await renderArtifactToPPTX(bp, artifactType as SupportedPptxArtifactType)
+      const { bytes } = await dispatchPptxExport(bp, artifactType as SupportedPptxArtifactType)
       return new NextResponse(new Uint8Array(bytes), {
         status: 200,
         headers: {
