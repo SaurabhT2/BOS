@@ -44,10 +44,29 @@
  *   smoke-tested in a real dev/CI environment with network access before
  *   this is considered fully verified end-to-end. Flagged in the
  *   completion report's Remaining Risks.
+ *
+ * RENDERING V2 — PHASE 4 (carousel only; deck/report/newsletter unchanged):
+ *   renderArtifactToPDF() now has a second path for carousel artifacts:
+ *   artifact-export-pdf-template.ts's renderCarouselToPrintHTML(), which
+ *   consumes the Composition Layer directly with a print-specific template
+ *   instead of reusing artifact-export-html.ts's on-screen template plus
+ *   `@media print`. See that file's header for the full rationale
+ *   (RENDERING_ARCHITECTURE_AUDIT.md Finding H-1).
+ *   - Gated behind process.env.RENDERING_V2_COMPOSITION_PDF === 'true' —
+ *     DELIBERATELY A SEPARATE FLAG from artifact-export-html.ts's
+ *     RENDERING_V2_COMPOSITION_HTML (RENDERING_ROADMAP_V2.md Phase 4: "PDF's
+ *     flag is independent of HTML's — they can each be ON/OFF independently
+ *     since they no longer share a rendering pass"). Toggling one does not
+ *     affect the other.
+ *   - Falls back to the pre-Phase-4 path (renderArtifactToHTML +
+ *     @media print) on any error, same defensive pattern as Phase 3's HTML
+ *     migration.
  */
 
 import type { SupportedHtmlArtifactType } from './artifact-export-html'
 import { renderArtifactToHTML } from './artifact-export-html'
+import { isCompositionPdfEnabled, renderCarouselToPrintHTML } from './artifact-export-pdf-template'
+import type { CarouselArtifact } from '@brandos/contracts'
 
 // puppeteer-core has no bundled browser — works identically in dev and
 // serverless, only the executable path + launch args differ.
@@ -210,7 +229,7 @@ export async function renderArtifactToPDF(
   artifact: Record<string, unknown>,
   artifactType: SupportedHtmlArtifactType
 ): Promise<PdfExportResult> {
-  const html = renderArtifactToHTML(artifact, artifactType)
+  const html = resolvePdfHtml(artifact, artifactType)
 
   const puppeteer = await import('puppeteer-core')
   const { executablePath, args, headless } = await resolveBrowserLaunchOptions()
@@ -228,9 +247,11 @@ export async function renderArtifactToPDF(
     // performs; 'load' is the correct and sufficient option here.
     await page.setContent(html, { waitUntil: 'load' })
 
-    // Emulate print media so each renderer's `@media print` rules apply —
-    // this is the entire reason PDF and HTML exports stay visually
-    // consistent without a second style sheet.
+    // Emulate print media so each renderer's `@media print` rules apply.
+    // Harmless (and still applied) even when the Phase 4 print-specific
+    // template is used instead — that template has no @media print rules
+    // of its own (it IS the print styling already), so this is a no-op for
+    // it, not a conflicting second style pass.
     await page.emulateMediaType('print')
 
     const pdfBuffer = await page.pdf({
@@ -243,4 +264,27 @@ export async function renderArtifactToPDF(
   } finally {
     await browser?.close()
   }
+}
+
+/**
+ * Resolves which HTML a given artifact/type should be printed from.
+ * RENDERING V2 PHASE 4: carousel gets the new print-specific template when
+ * RENDERING_V2_COMPOSITION_PDF is on; every other case (including carousel
+ * with the flag off) uses the pre-Phase-4 shared HTML + @media print path.
+ * Falls back defensively on any error from the new path, same pattern as
+ * artifact-export-html.ts's renderArtifactToHTML carousel case.
+ */
+export function resolvePdfHtml(artifact: Record<string, unknown>, artifactType: SupportedHtmlArtifactType): string {
+  if (artifactType === 'carousel' && isCompositionPdfEnabled()) {
+    try {
+      return renderCarouselToPrintHTML(artifact as unknown as CarouselArtifact)
+    } catch (err) {
+      console.error(
+        '[artifact-export-pdf] Composition Layer print template failed — falling back to shared HTML + @media print.',
+        err
+      )
+      return renderArtifactToHTML(artifact, artifactType)
+    }
+  }
+  return renderArtifactToHTML(artifact, artifactType)
 }
