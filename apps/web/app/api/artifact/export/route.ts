@@ -49,7 +49,9 @@ import {
 } from '@/lib/artifact-export-html'
 import { renderArtifactToPDF } from '@/lib/artifact-export-pdf'
 import { renderArtifactToPPTX, type SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
-import { importArtifactToCanva } from '@/lib/canva-export'
+import { importArtifactToCanvaFallback } from '@/lib/canva-export'
+import { isCanvaFieldRendererAvailable, submitAutofillJob } from '@/lib/canva-field-renderer'
+import type { CarouselArtifact } from '@brandos/contracts'
 import {
   getCanvaOAuthConfig,
   refreshCanvaToken,
@@ -280,18 +282,29 @@ export async function POST(req: NextRequest) {
     }
 
     // fmt === 'canva' — returns a JSON result (design URL), not a file
-    // download. Reuses renderArtifactToPDF under the hood (see
-    // lib/canva-export.ts header) — no separate Canva rendering path.
+    // download.
+    //
+    // RENDERING V2 PHASE 6: the choice between CanvaFieldRenderer (structured
+    // Autofill mapping) and CanvaImportFallback (PDF repackage) is made HERE,
+    // visibly, at the call site — not hidden inside either module (see
+    // RENDERER_CONTRACT.md §5). isCanvaFieldRendererAvailable() is a real,
+    // config-driven check (CANVA_BRAND_TEMPLATE_ID actually set), not a
+    // fabricated capability signal — see lib/canva-field-renderer.ts's header
+    // for why no brand template is configured by default in this codebase.
+    // Field-rendering is also scoped to carousel only, matching Phases 3-5's
+    // scope decision (composeArtifact() only supports carousel/deck/report/
+    // newsletter, and submitAutofillJob() is typed to CarouselArtifact
+    // specifically pending a real product decision on which artifact types
+    // get brand templates first).
     const tokenResult = await resolveCanvaAccessToken(workspaceId)
     if ('error' in tokenResult) {
       return NextResponse.json({ error: tokenResult.error }, { status: tokenResult.status })
     }
 
-    const importResult = await importArtifactToCanva({
-      accessToken: tokenResult.token,
-      artifact: bp,
-      artifactType,
-    })
+    const useFieldRenderer = artifactType === 'carousel' && isCanvaFieldRendererAvailable()
+    const importResult = useFieldRenderer
+      ? await submitAutofillJob({ accessToken: tokenResult.token, artifact: bp as unknown as CarouselArtifact })
+      : await importArtifactToCanvaFallback({ accessToken: tokenResult.token, artifact: bp, artifactType })
 
     if (!importResult.ok) {
       return NextResponse.json({ error: importResult.error ?? 'Canva import failed' }, { status: 502 })
