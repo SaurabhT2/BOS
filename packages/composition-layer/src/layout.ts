@@ -24,6 +24,17 @@ import type { ResolvedLayout } from './types'
  * compose.ts from whichever artifact-type-specific slide/section shape it's
  * looking at. This is the seam a LayoutResolutionStrategy operates against,
  * so strategies never need to know about ArtifactV2's per-type shapes.
+ *
+ * PHASE 8 ADDITION: the quantitative fields (headlineLength through
+ * statCount) were not needed by StaticLayoutStrategy (Phase 2), which only
+ * ever needed to know THAT bullets/stats/etc. exist, not how much of them.
+ * HeuristicFitStrategy (see heuristic-layout.ts) needs actual content
+ * volume to estimate whether a resolved archetype will visually overflow —
+ * a boolean "hasBullets" can't distinguish two bullets from twenty. Adding
+ * these fields is backward compatible: StaticLayoutStrategy ignores them
+ * entirely, and every compose.ts call site that builds a
+ * LayoutResolutionContext already has this data close at hand (it's the
+ * same slide/section object compose.ts is already reading to build blocks).
  */
 export interface LayoutResolutionContext {
   /** carousel role / deck slide type / report section id / newsletter section type */
@@ -34,6 +45,16 @@ export interface LayoutResolutionContext {
   hasStats: boolean
   hasDataPoints: boolean
   hasKeyFindings: boolean
+  /** Character length of the unit's primary heading text (0 if none). */
+  headlineLength: number
+  /** Character length of the unit's body text (0 if none). */
+  bodyLength: number
+  /** Number of bullet/key-finding items (0 if none). */
+  bulletCount: number
+  /** Combined character length of all bullet/key-finding items (0 if none). */
+  bulletTotalLength: number
+  /** Number of stat entries (0 if none; only decks currently produce these). */
+  statCount: number
 }
 
 export interface LayoutResolutionStrategy {

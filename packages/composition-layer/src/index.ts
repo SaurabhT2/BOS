@@ -24,6 +24,16 @@ export {
   type LayoutResolutionStrategy,
 } from './layout'
 
+export {
+  HeuristicFitStrategy,
+  getDefaultLayoutStrategy,
+  isLayoutHeuristicLoggingEnabled,
+  isLayoutHeuristicActiveEnabled,
+  fitScore,
+  bestFittingArchetype,
+  type LayoutDisagreement,
+} from './heuristic-layout'
+
 export { composeArtifact, UnsupportedArtifactTypeError, type ComposeOptions } from './compose'
 
 export type { Renderer, RenderOptions, RenderOutput } from './renderer-contract'

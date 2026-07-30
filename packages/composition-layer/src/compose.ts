@@ -23,6 +23,7 @@ import {
 } from '@brandos/contracts'
 import { resolveTheme, type BrandContextInput } from './theme'
 import { resolveLayout, type LayoutResolutionStrategy, type LayoutResolutionContext } from './layout'
+import { getDefaultLayoutStrategy } from './heuristic-layout'
 import type { CompositionDocument, CompositionUnit, CompositionBlock, PageBreakPolicy } from './types'
 
 export class UnsupportedArtifactTypeError extends Error {
@@ -101,6 +102,11 @@ function composeCarouselUnits(artifact: ArtifactV2 & { artifact_type: 'carousel'
       hasStats: false,
       hasDataPoints: false,
       hasKeyFindings: false,
+      headlineLength: slide.headline.length,
+      bodyLength: slide.body?.length ?? 0,
+      bulletCount: slide.bullets?.length ?? 0,
+      bulletTotalLength: slide.bullets?.reduce((sum, b) => sum + b.length, 0) ?? 0,
+      statCount: 0,
     }
     // Every carousel slide is a self-contained visual card — protect it from
     // mid-card page/screen breaks, extending the protection the audit found
@@ -141,6 +147,11 @@ function composeDeckUnits(artifact: ArtifactV2 & { artifact_type: 'deck' }, stra
       hasStats: !!slide.stats?.length,
       hasDataPoints: false,
       hasKeyFindings: false,
+      headlineLength: slide.title.length,
+      bodyLength: slide.body?.length ?? 0,
+      bulletCount: slide.bullets?.length ?? 0,
+      bulletTotalLength: slide.bullets?.reduce((sum, b) => sum + b.length, 0) ?? 0,
+      statCount: slide.stats?.length ?? 0,
     }
     const pageBreak: PageBreakPolicy = DECK_ALWAYS_BREAK_TYPES.has(slide.type) ? 'always' : 'avoid'
     return {
@@ -181,6 +192,15 @@ function composeReportUnits(artifact: ArtifactV2 & { artifact_type: 'report' }, 
       hasStats: false,
       hasDataPoints: !!section.data_points?.length,
       hasKeyFindings: !!section.key_findings?.length,
+      headlineLength: section.heading.length,
+      bodyLength: section.body.length,
+      bulletCount: section.key_findings?.length ?? 0,
+      bulletTotalLength: section.key_findings?.reduce((sum, f) => sum + f.length, 0) ?? 0,
+      // data_points render as an evidence-list (compose.ts's composeReportBlocks),
+      // not a stat-row — but they occupy comparable visual volume to stats, so
+      // counting them toward statCount gives the heuristic a real signal
+      // instead of silently ignoring this content dimension entirely.
+      statCount: section.data_points?.length ?? 0,
     }
     return {
       id: `report-section-${section.id}`,
@@ -216,6 +236,11 @@ function composeNewsletterUnits(artifact: ArtifactV2 & { artifact_type: 'newslet
       hasStats: false,
       hasDataPoints: false,
       hasKeyFindings: false,
+      headlineLength: section.heading?.length ?? 0,
+      bodyLength: section.body.length,
+      bulletCount: section.bullets?.length ?? 0,
+      bulletTotalLength: section.bullets?.reduce((sum, b) => sum + b.length, 0) ?? 0,
+      statCount: 0,
     }
     return {
       id: `newsletter-section-${section.id ?? index}`,
@@ -235,15 +260,23 @@ export function composeArtifact(artifact: ArtifactV2, options?: ComposeOptions):
   // that isn't actually a valid ArtifactV2 (see the defensive-branch comment
   // below), producing a confusing unrelated crash instead of this function's
   // own clear, named error — caught by compose.test.ts's malformed-input case.
+  // Phase 8: if the caller didn't supply an explicit strategy, the DEFAULT
+  // is now flag-aware (static / heuristic-log-only / heuristic-active) via
+  // getDefaultLayoutStrategy() — not always StaticLayoutStrategy as it was
+  // through Phase 7. An explicitly-supplied options.layoutStrategy always
+  // wins regardless of flags (an explicit caller choice is never overridden
+  // by environment configuration).
+  const layoutStrategy = options?.layoutStrategy ?? getDefaultLayoutStrategy()
+
   let buildUnits: () => CompositionUnit[]
   if (isCarouselArtifact(artifact)) {
-    buildUnits = () => composeCarouselUnits(artifact, options?.layoutStrategy)
+    buildUnits = () => composeCarouselUnits(artifact, layoutStrategy)
   } else if (isDeckArtifact(artifact)) {
-    buildUnits = () => composeDeckUnits(artifact, options?.layoutStrategy)
+    buildUnits = () => composeDeckUnits(artifact, layoutStrategy)
   } else if (isReportArtifact(artifact)) {
-    buildUnits = () => composeReportUnits(artifact, options?.layoutStrategy)
+    buildUnits = () => composeReportUnits(artifact, layoutStrategy)
   } else if (isNewsletterArtifact(artifact)) {
-    buildUnits = () => composeNewsletterUnits(artifact, options?.layoutStrategy)
+    buildUnits = () => composeNewsletterUnits(artifact, layoutStrategy)
   } else {
     // Defensive runtime guard: ArtifactV2's type-level union only has 4
     // members, so TypeScript (correctly) considers this branch unreachable
