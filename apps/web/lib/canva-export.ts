@@ -1,28 +1,33 @@
 /**
  * apps/web — lib/canva-export.ts
  *
- * Priority 4 — Canva Export. Smallest viable integration: send the SAME
- * PDF bytes Priority 2 already produces (renderArtifactToPDF) to Canva's
- * Design Import API, which converts it into an editable Canva design and
- * returns an edit URL.
+ * RENDERING V2 — PHASE 6 (part 2 of 2): CanvaImportFallback.
+ * See RENDERING_ARCHITECTURE_V2.md §2.3/§4.3, RENDERER_CONTRACT.md §5,
+ * and lib/canva-field-renderer.ts's header for the sibling module this
+ * one is now explicitly named and framed against.
  *
- * WHY DESIGN IMPORT, NOT AUTOFILL/BRAND TEMPLATES:
- *   Canva's Connect API offers two paths for getting BrandOS content into
- *   Canva:
- *     1. Autofill (brand templates + data fields) — produces the richest,
- *        most "on-brand" result, but REQUIRES the connecting user to be
- *        on Canva Enterprise, and requires a pre-built brand template per
- *        artifact type that a human designer maintains in Canva itself.
- *        Wrong choice for "smallest viable architecture" serving BrandOS's
- *        general (non-Enterprise) user base.
- *     2. Design Import (POST /v1/imports) — imports an arbitrary file
- *        (PDF, PPTX, etc.) as a new, fully editable Canva design. No
- *        Enterprise requirement documented. Available to any connected
- *        user. This is the path implemented here.
- *   This means Canva export has ~zero marginal rendering cost: it is a
- *   thin adapter around Priority 2's PDF renderer, exactly matching the
- *   brief's "prefer reusable export adapters" instruction. No new visual
- *   design logic was written for Canva.
+ * THIS MODULE'S ROLE, changed from its original framing (unchanged
+ * behavior — see the ARCHITECTURE section below, carried over verbatim):
+ *   Before Phase 6, this was simply "the Canva export path." It still does
+ *   exactly the same thing it always did (render PDF, hand it to Canva's
+ *   Design Import API, poll for completion) — what changed is that it is
+ *   now explicitly named and documented as the FALLBACK path, sitting
+ *   alongside CanvaFieldRenderer (lib/canva-field-renderer.ts) rather than
+ *   being "the" Canva renderer with an undocumented, unbuilt Autofill
+ *   alternative implied by old comments. importArtifactToCanvaFallback()
+ *   is called whenever CanvaFieldRenderer.isCanvaFieldRendererAvailable()
+ *   is false (i.e. no brand template is configured) — see route.ts's
+ *   dispatch, which makes this choice visible at the call site rather than
+ *   inside either module.
+ *
+ * ARCHITECTURE (unchanged from before Phase 6):
+ *   Smallest viable integration: send the SAME PDF bytes the PDF renderer
+ *   already produces (renderArtifactToPDF) to Canva's Design Import API,
+ *   which converts it into an editable Canva design and returns an edit
+ *   URL. Design Import (POST /v1/imports) requires no Enterprise tier and
+ *   no pre-built template — available to any connected user, unlike
+ *   CanvaFieldRenderer's Autofill path. Zero marginal rendering cost: a
+ *   thin adapter around the PDF renderer, no new visual design logic.
  *
  * FLOW (asynchronous job, per Canva's documented pattern):
  *   1. Render artifact → PDF bytes (reuses lib/artifact-export-pdf.ts).
@@ -71,10 +76,12 @@ const POLL_INTERVAL_MS = 1500
 const MAX_POLL_ATTEMPTS = 20 // ~30s ceiling — Canva imports of a single-doc PDF are typically fast
 
 /**
- * Render an artifact to PDF (reusing Priority 2's renderer) and import the
+ * Render an artifact to PDF (reusing the PDF renderer) and import the
  * result into Canva as a new, editable design for the connected user.
+ * This IS the fallback path (see this file's header) — use CanvaFieldRenderer
+ * (lib/canva-field-renderer.ts) instead when a brand template is configured.
  */
-export async function importArtifactToCanva(params: {
+export async function importArtifactToCanvaFallback(params: {
   accessToken: string
   artifact: Record<string, unknown>
   artifactType: SupportedHtmlArtifactType

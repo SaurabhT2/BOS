@@ -43,13 +43,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabase-server'
 import {
-  renderArtifactToHTML,
   safeFilenameStem,
   type SupportedHtmlArtifactType,
 } from '@/lib/artifact-export-html'
-import { renderArtifactToPDF } from '@/lib/artifact-export-pdf'
-import { renderArtifactToPPTX, type SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
-import { importArtifactToCanva } from '@/lib/canva-export'
+import { dispatchHtmlExport, dispatchPdfExport, dispatchPptxExport, dispatchImageExport } from '@/lib/registry-dispatch'
+import JSZip from 'jszip'
+import type { SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
+import { importArtifactToCanvaFallback } from '@/lib/canva-export'
+import { isCanvaFieldRendererAvailable, submitAutofillJob } from '@/lib/canva-field-renderer'
+import type { CarouselArtifact } from '@brandos/contracts'
 import {
   getCanvaOAuthConfig,
   refreshCanvaToken,
@@ -68,7 +70,7 @@ export const runtime = 'nodejs'
 // elsewhere in apps/web (see /api/generate-with-progress).
 export const maxDuration = 60
 
-type ExportFormat = 'html' | 'json' | 'pdf' | 'pptx' | 'canva'
+type ExportFormat = 'html' | 'json' | 'pdf' | 'pptx' | 'canva' | 'png'
 
 // SPRINT1-FIX (F-01): 'newsletter' added — was absent, causing HTTP 400 for
 // every newsletter export despite the compiler, governance, and React renderer
@@ -110,6 +112,10 @@ const CONTENT_TYPES: Record<Exclude<ExportFormat, 'canva'>, string> = {
   json: 'application/json',
   pdf:  'application/pdf',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // PNG export produces one image PER SLIDE (RENDERING_ARCHITECTURE_V2.md §4.4) —
+  // a single HTTP response can only carry one file, so multiple images are
+  // packaged as a zip archive, not raw image/png bytes.
+  png:  'application/zip',
 }
 
 /**
@@ -212,9 +218,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: shapeError }, { status: 422 })
   }
 
-  if (!['html', 'json', 'pdf', 'pptx', 'canva'].includes(format)) {
+  if (!['html', 'json', 'pdf', 'pptx', 'canva', 'png'].includes(format)) {
     return NextResponse.json(
-      { error: `Unsupported export format: ${format}. Supported: html, json, pdf, pptx, canva` },
+      { error: `Unsupported export format: ${format}. Supported: html, json, pdf, pptx, canva, png` },
       { status: 400 }
     )
   }
@@ -224,7 +230,7 @@ export async function POST(req: NextRequest) {
 
   try {
     if (fmt === 'html') {
-      const html = renderArtifactToHTML(bp, artifactType)
+      const html = await dispatchHtmlExport(bp, artifactType)
       return new NextResponse(html, {
         status: 200,
         headers: {
@@ -248,7 +254,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (fmt === 'pdf') {
-      const { bytes } = await renderArtifactToPDF(bp, artifactType)
+      const { bytes } = await dispatchPdfExport(bp, artifactType)
       return new NextResponse(new Uint8Array(bytes), {
         status: 200,
         headers: {
@@ -268,7 +274,7 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         )
       }
-      const { bytes } = await renderArtifactToPPTX(bp, artifactType as SupportedPptxArtifactType)
+      const { bytes } = await dispatchPptxExport(bp, artifactType as SupportedPptxArtifactType)
       return new NextResponse(new Uint8Array(bytes), {
         status: 200,
         headers: {
@@ -279,19 +285,54 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    if (fmt === 'png') {
+      // RENDERING V2 PHASE 9: implements the previously-unimplemented 'png'
+      // ExportFormat value (RENDERING_ARCHITECTURE_AUDIT.md Finding M-2).
+      // Carousel only, matching the scope pattern established by Phases 3-8.
+      if (artifactType !== 'carousel') {
+        return NextResponse.json(
+          { error: 'Only carousel artifacts support PNG export in this phase.' },
+          { status: 400 }
+        )
+      }
+      const { images } = await dispatchImageExport(bp, 'carousel')
+      const zip = new JSZip()
+      images.forEach((image, i) => zip.file(`slide-${i + 1}.png`, image))
+      const zipBytes = await zip.generateAsync({ type: 'nodebuffer' })
+      return new NextResponse(new Uint8Array(zipBytes), {
+        status: 200,
+        headers: {
+          'Content-Type': CONTENT_TYPES.png,
+          'Content-Disposition': `attachment; filename="${safeTitle}-images.zip"`,
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+
     // fmt === 'canva' — returns a JSON result (design URL), not a file
-    // download. Reuses renderArtifactToPDF under the hood (see
-    // lib/canva-export.ts header) — no separate Canva rendering path.
+    // download.
+    //
+    // RENDERING V2 PHASE 6: the choice between CanvaFieldRenderer (structured
+    // Autofill mapping) and CanvaImportFallback (PDF repackage) is made HERE,
+    // visibly, at the call site — not hidden inside either module (see
+    // RENDERER_CONTRACT.md §5). isCanvaFieldRendererAvailable() is a real,
+    // config-driven check (CANVA_BRAND_TEMPLATE_ID actually set), not a
+    // fabricated capability signal — see lib/canva-field-renderer.ts's header
+    // for why no brand template is configured by default in this codebase.
+    // Field-rendering is also scoped to carousel only, matching Phases 3-5's
+    // scope decision (composeArtifact() only supports carousel/deck/report/
+    // newsletter, and submitAutofillJob() is typed to CarouselArtifact
+    // specifically pending a real product decision on which artifact types
+    // get brand templates first).
     const tokenResult = await resolveCanvaAccessToken(workspaceId)
     if ('error' in tokenResult) {
       return NextResponse.json({ error: tokenResult.error }, { status: tokenResult.status })
     }
 
-    const importResult = await importArtifactToCanva({
-      accessToken: tokenResult.token,
-      artifact: bp,
-      artifactType,
-    })
+    const useFieldRenderer = artifactType === 'carousel' && isCanvaFieldRendererAvailable()
+    const importResult = useFieldRenderer
+      ? await submitAutofillJob({ accessToken: tokenResult.token, artifact: bp as unknown as CarouselArtifact })
+      : await importArtifactToCanvaFallback({ accessToken: tokenResult.token, artifact: bp, artifactType })
 
     if (!importResult.ok) {
       return NextResponse.json({ error: importResult.error ?? 'Canva import failed' }, { status: 502 })

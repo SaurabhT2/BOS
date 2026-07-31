@@ -104,7 +104,7 @@ export interface PdfExportResult {
  * dependency — do not add it. puppeteer-core works identically but requires
  * an explicit executablePath, which is what this function provides.
  */
-async function resolveBrowserLaunchOptions(): Promise<{
+export async function resolveBrowserLaunchOptions(): Promise<{
   executablePath: string
   args: string[]
   headless: boolean

@@ -26,6 +26,37 @@
  * once each — no per-format duplication beyond what the three distinct
  * artifact shapes (carousel slides / deck slides / report sections)
  * structurally require.
+ *
+ * RENDERING V2 — PHASE 5 (carousel only; deck/report unchanged):
+ *   renderCarouselToPPTXComposed() is a NEW carousel path consuming the
+ *   Composition Layer — ResolvedTheme instead of CAROUSEL_ROLE_COLORS'
+ *   hardcoded hex table, and ResolvedLayout archetype dispatch instead of
+ *   one fixed vertical layout for every slide regardless of layout_hint.
+ *   This is what actually makes layout_hint have observable effect in
+ *   PowerPoint (closing Finding C-3/P-2's PPTX half — Phase 3 already
+ *   closed the HTML half).
+ *
+ *   NOT SOLVED, STATED HONESTLY (RENDERING_ROADMAP_V2.md Phase 5's own
+ *   validation note: "must not claim the overflow risk is solved, only
+ *   mitigated"): pptxgenjs has no text-measurement API in this or any
+ *   version — there is no way to ask it "how tall will this text actually
+ *   render at this font size and width" before positioning the next
+ *   element. The legacy renderer below accepts this and lets content flow
+ *   past the slide bottom for unusually long text. This phase's composed
+ *   renderer instead tracks a conservative estimated cursorY per block and
+ *   SKIPS rendering any block that would start past a safety margin near
+ *   the bottom of the slide, rather than positioning it off-slide invisibly.
+ *   This is strictly better than doing nothing, but it is a height-BUDGET
+ *   heuristic, not real measurement — an unusually dense slide can still
+ *   lose its lowest block(s) to this skip logic rather than overflow. A
+ *   genuine fix would require either pptxgenjs adding text measurement or
+ *   this module doing its own text-metrics estimation (font-metrics-based
+ *   width/wrap calculation) — out of scope for this phase.
+ *
+ *   Gated behind process.env.RENDERING_V2_COMPOSITION_PPTX === 'true' — a
+ *   THIRD independent flag alongside Phase 3's RENDERING_V2_COMPOSITION_HTML
+ *   and Phase 4's RENDERING_V2_COMPOSITION_PDF. Falls back to the legacy
+ *   renderer on any error, same defensive pattern as Phases 3-4.
  */
 
 // NOTE: pptxgenjs is intentionally NOT statically imported at the top level,
@@ -83,6 +114,14 @@ import {
   extractDeckSlide,
   extractReportSection,
 } from './artifact-export-html'
+import type { CarouselArtifact } from '@brandos/contracts'
+import {
+  composeArtifact,
+  type CompositionBlock,
+  type CompositionUnit,
+  type ResolvedTheme,
+  type ResolvedLayout,
+} from '@brandos/composition-layer'
 
 // Anchor to the real CWD so Node's node_modules search starts from the
 // actual project root, not Turbopack's virtual __filename path.
@@ -218,6 +257,250 @@ export async function renderCarouselToPPTX(artifact: Record<string, unknown>): P
     const closing = pptx.addSlide()
     closing.background = { color: '0EA5E9' }
     closing.addText(cta, {
+      x: 0.8, y: LAYOUT_H / 2 - 0.6, w: LAYOUT_W - 1.6, h: 1.2,
+      fontSize: 24, bold: true, color: 'FFFFFF', fontFace: 'Arial', align: 'center', valign: 'middle',
+    })
+  }
+
+  return { bytes: await toBuffer(pptx), mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }
+}
+
+// ─── Carousel → PPTX — Composition Layer path (Phase 5) ────────────────────────
+// See this file's header comment for full migration scope, the M-1
+// mitigation-not-solution note, and the flag name.
+
+export function isCompositionPptxEnabled(): boolean {
+  return process.env.RENDERING_V2_COMPOSITION_PPTX === 'true'
+}
+
+// Slide geometry constants (inches). Kept separate from the legacy
+// renderer's constants above even though some values coincide, since these
+// are being tuned independently per ResolvedLayout archetype below.
+const CONTENT_X = 0.6
+const CONTENT_W = LAYOUT_W - 1.2
+const CONTENT_TOP = 0.85
+const SLIDE_BOTTOM_MARGIN = 0.4 // nothing new starts below LAYOUT_H - this
+
+interface Region { x: number; y: number; w: number }
+
+/**
+ * Per-archetype content region(s). 'split' is the one archetype that
+ * actually needs two independent regions (and two independent cursors) —
+ * every other archetype flows blocks down one region. This is the PPTX
+ * equivalent of the HTML renderer's CSS grid-template-columns for 'split'
+ * (Phase 3) — same architectural idea, format-appropriate mechanism.
+ */
+function resolveRegions(layout: ResolvedLayout): { primary: Region; secondary?: Region; align: 'left' | 'center' } {
+  switch (layout) {
+    case 'split':
+      return {
+        primary: { x: CONTENT_X, y: CONTENT_TOP, w: CONTENT_W / 2 - 0.15 },
+        secondary: { x: CONTENT_X + CONTENT_W / 2 + 0.15, y: CONTENT_TOP, w: CONTENT_W / 2 - 0.15 },
+        align: 'left',
+      }
+    case 'full-bleed':
+      return { primary: { x: 1.0, y: 1.6, w: LAYOUT_W - 2.0 }, align: 'center' }
+    case 'centered':
+      return { primary: { x: CONTENT_X, y: CONTENT_TOP, w: CONTENT_W }, align: 'center' }
+    case 'headline-primary':
+    case 'bullets-primary':
+    case 'data-callout':
+    case 'stats-grid':
+    default:
+      return { primary: { x: CONTENT_X, y: CONTENT_TOP, w: CONTENT_W }, align: 'left' }
+  }
+}
+
+/** Longest-keyword-first bold+accent-colored run split, for pptxgenjs's TextProps array form. */
+function emphasisRuns(
+  text: string,
+  emphasis: string[] | undefined,
+  accentColor: string,
+  baseColor: string
+): Array<{ text: string; options?: Record<string, unknown> }> {
+  if (!emphasis?.length) return [{ text }]
+  const sorted = [...emphasis].sort((a, b) => b.length - a.length)
+  const pattern = new RegExp(`(${sorted.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
+  return text
+    .split(pattern)
+    .filter((p) => p.length > 0)
+    .map((part) =>
+      sorted.some((k) => k.toLowerCase() === part.toLowerCase())
+        ? { text: part, options: { bold: true, color: accentColor } }
+        : { text: part, options: { color: baseColor } }
+    )
+}
+
+/**
+ * Renders one block into `region` starting at `cursorY`, returns the
+ * estimated next cursorY. Returns `null` (and renders nothing) if `cursorY`
+ * is already past the safety margin — see this file's header M-1 note.
+ */
+function renderPptxBlock(
+  slide: ReturnType<ReturnType<typeof newPresentation>['addSlide']>,
+  block: CompositionBlock,
+  region: Region,
+  cursorY: number,
+  align: 'left' | 'center',
+  theme: ResolvedTheme,
+  rectShapeType: ReturnType<typeof newPresentation>['ShapeType']['rect']
+): number | null {
+  if (cursorY > LAYOUT_H - SLIDE_BOTTOM_MARGIN) return null // M-1 mitigation: skip, don't overflow off-slide
+
+  const accent = theme.palette.accent
+  switch (block.kind) {
+    case 'heading': {
+      const fontSize = block.level === 1 ? 26 : block.level === 2 ? 16 : 12
+      const h = block.level === 1 ? 1.1 : 0.6
+      slide.addText(emphasisRuns(block.text, block.emphasis, accent, theme.palette.textPrimary), {
+        x: region.x, y: cursorY, w: region.w, h,
+        fontSize, bold: block.level === 1, color: theme.palette.textPrimary, fontFace: 'Arial', align,
+      })
+      return cursorY + h + 0.1
+    }
+    case 'body': {
+      const h = 1.0
+      slide.addText(emphasisRuns(block.text, block.emphasis, accent, theme.palette.textSecondary), {
+        x: region.x, y: cursorY, w: region.w, h,
+        fontSize: 14, color: theme.palette.textSecondary, fontFace: 'Arial', valign: 'top', align,
+      })
+      return cursorY + h + 0.1
+    }
+    case 'bullets': {
+      const h = Math.min(0.35 * block.items.length + 0.2, 2.4)
+      slide.addText(
+        block.items.map((b) => ({ text: b, options: { bullet: true, color: theme.palette.textSecondary, breakLine: true } })),
+        { x: region.x, y: cursorY, w: region.w, h, fontSize: 14, fontFace: 'Arial', valign: 'top' }
+      )
+      return cursorY + h + 0.1
+    }
+    case 'callout': {
+      const h = 0.9
+      const label = block.variant === 'insight' ? 'Key Insight' : block.variant === 'takeaway' ? 'Takeaway' : 'Quote'
+      slide.addShape(rectShapeType, {
+        x: region.x, y: cursorY, w: region.w, h,
+        fill: { color: theme.palette.surface }, line: { color: accent, width: 1 },
+      })
+      slide.addText(label, {
+        x: region.x + 0.15, y: cursorY + 0.08, w: region.w - 0.3, h: 0.25,
+        fontSize: 9, bold: true, color: accent, fontFace: 'Arial', charSpacing: 1,
+      })
+      slide.addText(block.text, {
+        x: region.x + 0.15, y: cursorY + 0.35, w: region.w - 0.3, h: h - 0.4,
+        fontSize: 13, bold: true, color: theme.palette.textPrimary, fontFace: 'Arial', valign: 'top',
+      })
+      return cursorY + h + 0.1
+    }
+    case 'evidence-list': {
+      const h = Math.min(0.3 * block.items.length + 0.3, 1.6)
+      slide.addText('EVIDENCE', {
+        x: region.x, y: cursorY, w: region.w, h: 0.25,
+        fontSize: 9, bold: true, color: theme.palette.textSecondary, fontFace: 'Arial', charSpacing: 1,
+      })
+      slide.addText(
+        block.items.map((e) => ({ text: e, options: { bullet: true, color: theme.palette.textSecondary, breakLine: true } })),
+        { x: region.x, y: cursorY + 0.3, w: region.w, h: h - 0.3, fontSize: 11, fontFace: 'Arial', valign: 'top' }
+      )
+      return cursorY + h + 0.1
+    }
+    case 'stat-row': {
+      const h = 1.1
+      const statWidth = region.w / Math.max(block.stats.length, 1)
+      block.stats.forEach((stat, i) => {
+        const x = region.x + i * statWidth
+        slide.addText(stat.value, {
+          x, y: cursorY, w: statWidth, h: 0.7,
+          fontSize: 28, bold: true, color: accent, fontFace: 'Arial', align: 'center',
+        })
+        slide.addText(stat.label, {
+          x, y: cursorY + 0.7, w: statWidth, h: 0.4,
+          fontSize: 11, color: theme.palette.textSecondary, fontFace: 'Arial', align: 'center',
+        })
+      })
+      return cursorY + h + 0.1
+    }
+    case 'speaker-notes':
+      // Never rendered on the visible slide — same convention as the HTML
+      // and PDF renderers (presentation-only content).
+      return cursorY
+  }
+}
+
+function renderCompositionUnitToPptx(
+  pptx: ReturnType<typeof newPresentation>,
+  unit: CompositionUnit,
+  theme: ResolvedTheme,
+  idx: number
+): void {
+  const rectShapeType = pptx.ShapeType.rect
+  const slide = pptx.addSlide()
+  slide.background = { color: theme.palette.background }
+  slide.addShape(rectShapeType, { x: 0, y: 0, w: 0.12, h: LAYOUT_H, fill: { color: theme.palette.accent } })
+  slide.addText(`${unit.role.toUpperCase()} · SLIDE ${idx + 1}`, {
+    x: CONTENT_X, y: 0.4, w: 8, h: 0.35,
+    fontSize: 11, bold: true, color: theme.palette.accent, fontFace: 'Arial', charSpacing: 1,
+  })
+
+  const { primary, secondary, align } = resolveRegions(unit.layout)
+
+  if (secondary) {
+    // 'split': heading blocks flow into the primary (left) region, everything
+    // else into the secondary (right) region — mirrors the HTML renderer's
+    // grid-template-columns behavior (heading in one area, supporting
+    // content in the other) using two independent cursors.
+    let leftY = primary.y
+    let rightY = secondary.y
+    for (const block of unit.blocks) {
+      if (block.kind === 'heading') {
+        const next = renderPptxBlock(slide, block, primary, leftY, align, theme, rectShapeType)
+        if (next !== null) leftY = next
+      } else {
+        const next = renderPptxBlock(slide, block, secondary, rightY, align, theme, rectShapeType)
+        if (next !== null) rightY = next
+      }
+    }
+    return
+  }
+
+  let cursorY = primary.y
+  for (const block of unit.blocks) {
+    const next = renderPptxBlock(slide, block, primary, cursorY, align, theme, rectShapeType)
+    if (next !== null) cursorY = next
+  }
+}
+
+/**
+ * Composition-Layer-based carousel PPTX renderer (Phase 5). Dispatches on
+ * ResolvedLayout archetype instead of a fixed vertical layout, and reads
+ * ResolvedTheme instead of CAROUSEL_ROLE_COLORS' hardcoded hex table.
+ */
+export async function renderCarouselToPPTXComposed(artifact: CarouselArtifact): Promise<PptxExportResult> {
+  const pptx = newPresentation()
+  const doc = composeArtifact(artifact)
+
+  // Title slide — same purpose as the legacy renderer's, now theme-driven.
+  const titleSlide = pptx.addSlide()
+  titleSlide.background = { color: doc.theme.palette.background }
+  titleSlide.addShape(pptx.ShapeType.rect, {
+    x: 0, y: 0, w: LAYOUT_W, h: 2.6, fill: { color: doc.theme.palette.primary },
+  })
+  titleSlide.addText(artifact.title || 'Carousel', {
+    x: 0.6, y: 0.5, w: LAYOUT_W - 1.2, h: 1.4,
+    fontSize: 32, bold: true, color: 'FFFFFF', fontFace: 'Arial', align: 'left',
+  })
+  if (artifact.hook) {
+    titleSlide.addText(artifact.hook, {
+      x: 0.6, y: 1.8, w: LAYOUT_W - 1.2, h: 0.7,
+      fontSize: 16, italic: true, color: 'FFFFFF', fontFace: 'Arial',
+    })
+  }
+
+  doc.units.forEach((unit, idx) => renderCompositionUnitToPptx(pptx, unit, doc.theme, idx))
+
+  if (artifact.cta) {
+    const closing = pptx.addSlide()
+    closing.background = { color: doc.theme.palette.primary }
+    closing.addText(artifact.cta, {
       x: 0.8, y: LAYOUT_H / 2 - 0.6, w: LAYOUT_W - 1.6, h: 1.2,
       fontSize: 24, bold: true, color: 'FFFFFF', fontFace: 'Arial', align: 'center', valign: 'middle',
     })
@@ -397,7 +680,19 @@ export async function renderArtifactToPPTX(
   artifactType: SupportedPptxArtifactType
 ): Promise<PptxExportResult> {
   switch (artifactType) {
-    case 'carousel': return renderCarouselToPPTX(artifact)
+    case 'carousel':
+      if (isCompositionPptxEnabled()) {
+        try {
+          return await renderCarouselToPPTXComposed(artifact as unknown as CarouselArtifact)
+        } catch (err) {
+          console.error(
+            '[artifact-export-pptx] Composition Layer carousel render failed — falling back to legacy renderer.',
+            err
+          )
+          return renderCarouselToPPTX(artifact)
+        }
+      }
+      return renderCarouselToPPTX(artifact)
     case 'deck':      return renderDeckToPPTX(artifact)
     case 'report':    return renderReportToPPTX(artifact)
   }

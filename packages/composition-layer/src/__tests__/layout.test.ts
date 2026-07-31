@@ -7,6 +7,11 @@ const emptyCtx = {
   hasStats: false,
   hasDataPoints: false,
   hasKeyFindings: false,
+  headlineLength: 0,
+  bodyLength: 0,
+  bulletCount: 0,
+  bulletTotalLength: 0,
+  statCount: 0,
 }
 
 describe('resolveLayout — carousel', () => {
