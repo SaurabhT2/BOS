@@ -87,6 +87,7 @@ import {
   renderArtifactToPPTX,
   type SupportedPptxArtifactType,
 } from './artifact-export-pptx'
+import { renderCarouselToImages } from './artifact-export-image'
 
 // ─── Cast helper ──────────────────────────────────────────────────────────────
 //
@@ -236,6 +237,52 @@ class PptxExporter implements IExporter {
   }
 }
 
+// ─── PNG IExporter ───────────────────────────────────────────────────────────
+//
+// RENDERING V2 PHASE 9: implements @brandos/contracts' ExportFormat 'png'
+// value, which existed in the canonical schema before this phase but had no
+// implementation anywhere (RENDERING_ARCHITECTURE_AUDIT.md Finding M-2).
+// Carousel only, matching the scope pattern established by Phases 3-8 —
+// one complete artifact type, not four partial ones.
+//
+// UNLIKE PdfExporter/PptxExporter: this produces MULTIPLE images (one per
+// CompositionUnit — a carousel's slides map naturally onto a LinkedIn
+// carousel post's one-image-per-slide structure), not a single document.
+// ExportResult.data carries a Buffer[] here, not a single Buffer — callers
+// (see route.ts's 'png' branch) must know to expect an array for this
+// format specifically.
+
+class PngExporter implements IExporter {
+  readonly supportedFormats: ExportFormat[] = ['png']
+  readonly supportedArtifactTypes: ArtifactType[] = ['carousel']
+
+  async export(artifact: ArtifactV2, _options: ExportOptions): Promise<ExportResult> {
+    const t0 = Date.now()
+
+    if (artifact.artifact_type !== 'carousel') {
+      return {
+        format: 'png',
+        slideCount: 0,
+        durationMs: Date.now() - t0,
+        success: false,
+        error: 'Only carousel artifacts can be exported as PNG images in this phase.',
+      }
+    }
+
+    const result = await renderCarouselToImages(artifact as CarouselArtifact)
+    const totalBytes = result.images.reduce((sum, buf) => sum + buf.byteLength, 0)
+
+    return {
+      format: 'png',
+      data: result.images, // Buffer[], not Buffer — see this class's header comment
+      sizeBytes: totalBytes,
+      slideCount: result.images.length,
+      durationMs: Date.now() - t0,
+      success: true,
+    }
+  }
+}
+
 // ─── Adapter singletons ───────────────────────────────────────────────────────
 
 export const carouselHtmlRendererAdapter   = new CarouselHtmlRendererAdapter()
@@ -245,6 +292,7 @@ export const newsletterHtmlRendererAdapter = new NewsletterHtmlRendererAdapter()
 
 export const pdfExporter  = new PdfExporter()
 export const pptxExporter = new PptxExporter()
+export const pngExporter  = new PngExporter()
 
 // ─── Registration helpers ─────────────────────────────────────────────────────
 //
@@ -275,5 +323,6 @@ export function registerRendererAdapters(registry: IArtifactRegistry): void {
 export function registerExporterAdapters(registry: IArtifactRegistry): void {
   registry.registerExporter(pdfExporter)
   registry.registerExporter(pptxExporter)
-  console.info('[ExportAdapters] Exporters registered: pdf (all 4 types), pptx (carousel, deck, report)')
+  registry.registerExporter(pngExporter)
+  console.info('[ExportAdapters] Exporters registered: pdf (all 4 types), pptx (carousel, deck, report), png (carousel)')
 }

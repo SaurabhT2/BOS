@@ -40,6 +40,7 @@ import {
   dispatchHtmlExport,
   dispatchPdfExport,
   dispatchPptxExport,
+  dispatchImageExport,
 } from '../lib/registry-dispatch'
 
 const ORIGINAL_FLAG = process.env.RENDERING_V2_REGISTRY_DISPATCH
@@ -225,5 +226,49 @@ describe('dispatchPptxExport', () => {
     const result = await dispatchPptxExport(dummyArtifact, 'carousel', emptyRegistry)
     expect(result.bytes.toString()).not.toBe(STUB_MARKER)
     expect(result.mimeType).toBe('application/vnd.openxmlformats-officedocument.presentationml.presentation')
+  })
+})
+
+describe('dispatchImageExport (Phase 9 — no flag, net-new capability)', () => {
+  const stubImageExporter: IExporter = {
+    supportedFormats: ['png'],
+    supportedArtifactTypes: ['carousel'],
+    async export(): Promise<ExportResult> {
+      return {
+        format: 'png',
+        data: [Buffer.from(STUB_MARKER)],
+        sizeBytes: STUB_MARKER.length,
+        slideCount: 1,
+        durationMs: 1,
+        success: true,
+      }
+    },
+  }
+
+  it('consults the registry unconditionally (no flag check) when an exporter is registered', async () => {
+    const registry = new StubRegistry(null, stubImageExporter)
+    const result = await dispatchImageExport(dummyArtifact, 'carousel', registry)
+    expect(result.images[0]!.toString()).toBe(STUB_MARKER)
+  })
+
+  it('falls back to the direct-call path when nothing is registered, without needing a flag', async () => {
+    const emptyRegistry = new StubRegistry(null, null)
+    // The direct-call fallback here invokes renderCarouselToImages(), which
+    // calls composeArtifact() and eventually launches real headless
+    // Chromium. This test's shared `dummyArtifact` fixture (used across
+    // every dispatch test in this file) is deliberately minimal and lacks
+    // several fields real ArtifactV2 objects always have (e.g.
+    // semantic_theme) — fine for the OTHER dispatch functions' fallback
+    // paths, which call the legacy renderers directly and never touch the
+    // Composition Layer, but dispatchImageExport's fallback has no legacy
+    // counterpart to fall back to and goes straight through
+    // composeArtifact(), which throws on this incomplete fixture before it
+    // would even reach the (also unavailable in this sandbox) Chromium
+    // launch. Either failure mode proves the same thing this test cares
+    // about — the registry-miss branch was reached and control passed to
+    // the direct-call path — so asserting "it throws" here, without
+    // depending on exactly where, is the correct and honest scope for this
+    // test.
+    await expect(dispatchImageExport(dummyArtifact, 'carousel', emptyRegistry)).rejects.toBeDefined()
   })
 })

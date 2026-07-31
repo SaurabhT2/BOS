@@ -153,3 +153,35 @@ export async function dispatchPptxExport(
   }
   return renderArtifactToPPTX(artifact, artifactType)
 }
+
+/**
+ * RENDERING V2 PHASE 9: unlike the three dispatch functions above, this one
+ * is NOT gated behind isRegistryDispatchEnabled() — 'png' is a net-new
+ * export capability (RENDERING_ROADMAP_V2.md Phase 9: "no flag needed since
+ * there is no existing behavior to gate against"). It always tries the
+ * registry first and falls back to a direct call only if the registry has
+ * nothing registered or throws — the same defensive pattern as every other
+ * dispatch function, just without an on/off switch, since there's no
+ * pre-Phase-9 behavior this could regress.
+ */
+export async function dispatchImageExport(
+  artifact: Record<string, unknown>,
+  artifactType: 'carousel',
+  registry?: IArtifactRegistry
+): Promise<{ images: Buffer[] }> {
+  try {
+    const resolvedRegistry = registry ?? (await getGlobalRegistry())
+    const exporter = resolvedRegistry.resolveExporter(artifactType as ArtifactType, 'png')
+    if (exporter) {
+      const result = await exporter.export(artifact as never, { format: 'png' })
+      if (result.success && result.data) {
+        return { images: result.data as Buffer[] }
+      }
+    }
+  } catch (err) {
+    console.error('[registry-dispatch] PNG registry export failed — falling back to direct call.', err)
+  }
+  const { renderCarouselToImages } = await import('./artifact-export-image')
+  const result = await renderCarouselToImages(artifact as never)
+  return { images: result.images }
+}

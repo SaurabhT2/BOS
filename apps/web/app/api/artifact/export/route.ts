@@ -46,7 +46,8 @@ import {
   safeFilenameStem,
   type SupportedHtmlArtifactType,
 } from '@/lib/artifact-export-html'
-import { dispatchHtmlExport, dispatchPdfExport, dispatchPptxExport } from '@/lib/registry-dispatch'
+import { dispatchHtmlExport, dispatchPdfExport, dispatchPptxExport, dispatchImageExport } from '@/lib/registry-dispatch'
+import JSZip from 'jszip'
 import type { SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
 import { importArtifactToCanvaFallback } from '@/lib/canva-export'
 import { isCanvaFieldRendererAvailable, submitAutofillJob } from '@/lib/canva-field-renderer'
@@ -69,7 +70,7 @@ export const runtime = 'nodejs'
 // elsewhere in apps/web (see /api/generate-with-progress).
 export const maxDuration = 60
 
-type ExportFormat = 'html' | 'json' | 'pdf' | 'pptx' | 'canva'
+type ExportFormat = 'html' | 'json' | 'pdf' | 'pptx' | 'canva' | 'png'
 
 // SPRINT1-FIX (F-01): 'newsletter' added — was absent, causing HTTP 400 for
 // every newsletter export despite the compiler, governance, and React renderer
@@ -111,6 +112,10 @@ const CONTENT_TYPES: Record<Exclude<ExportFormat, 'canva'>, string> = {
   json: 'application/json',
   pdf:  'application/pdf',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // PNG export produces one image PER SLIDE (RENDERING_ARCHITECTURE_V2.md §4.4) —
+  // a single HTTP response can only carry one file, so multiple images are
+  // packaged as a zip archive, not raw image/png bytes.
+  png:  'application/zip',
 }
 
 /**
@@ -213,9 +218,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: shapeError }, { status: 422 })
   }
 
-  if (!['html', 'json', 'pdf', 'pptx', 'canva'].includes(format)) {
+  if (!['html', 'json', 'pdf', 'pptx', 'canva', 'png'].includes(format)) {
     return NextResponse.json(
-      { error: `Unsupported export format: ${format}. Supported: html, json, pdf, pptx, canva` },
+      { error: `Unsupported export format: ${format}. Supported: html, json, pdf, pptx, canva, png` },
       { status: 400 }
     )
   }
@@ -275,6 +280,30 @@ export async function POST(req: NextRequest) {
         headers: {
           'Content-Type': CONTENT_TYPES.pptx,
           'Content-Disposition': `attachment; filename="${safeTitle}.pptx"`,
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+
+    if (fmt === 'png') {
+      // RENDERING V2 PHASE 9: implements the previously-unimplemented 'png'
+      // ExportFormat value (RENDERING_ARCHITECTURE_AUDIT.md Finding M-2).
+      // Carousel only, matching the scope pattern established by Phases 3-8.
+      if (artifactType !== 'carousel') {
+        return NextResponse.json(
+          { error: 'Only carousel artifacts support PNG export in this phase.' },
+          { status: 400 }
+        )
+      }
+      const { images } = await dispatchImageExport(bp, 'carousel')
+      const zip = new JSZip()
+      images.forEach((image, i) => zip.file(`slide-${i + 1}.png`, image))
+      const zipBytes = await zip.generateAsync({ type: 'nodebuffer' })
+      return new NextResponse(new Uint8Array(zipBytes), {
+        status: 200,
+        headers: {
+          'Content-Type': CONTENT_TYPES.png,
+          'Content-Disposition': `attachment; filename="${safeTitle}-images.zip"`,
           'Cache-Control': 'no-store',
         },
       })
