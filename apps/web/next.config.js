@@ -60,7 +60,46 @@ const nextConfig = {
   // unbundled. See lib/scanned-pdf-ocr.ts, which loads pdfjs-dist via
   // dynamic import() for the same reason artifact-export-pptx.ts does for
   // pptxgenjs.
-  serverExternalPackages: ['pptxgenjs', '@napi-rs/canvas', 'pdfjs-dist'],
+  // puppeteer-core + @sparticuz/chromium must ALSO not be bundled by
+  // webpack/Turbopack, for the same underlying reason as pptxgenjs above but
+  // with a more severe failure mode: @sparticuz/chromium ships a Chromium
+  // BINARY (not just native .node addons) that it locates at runtime via a
+  // path relative to its own package directory
+  // (node_modules/@sparticuz/chromium/bin). If left un-externalized, Next.js
+  // either bundles/relocates the package's JS into a chunk whose relative
+  // path no longer matches where the binary actually lives, or its output
+  // file tracing doesn't know to include that bin/ directory in the
+  // deployed serverless function at all — producing exactly the error this
+  // comment exists to prevent:
+  //   "@sparticuz/chromium failed to load... input directory
+  //   .../@sparticuz/chromium/bin does not exist... you must externalize
+  //   @sparticuz/chromium so it is not relocated."
+  // (See https://github.com/Sparticuz/chromium#bundler-configuration.)
+  // artifact-export-pdf.ts and artifact-export-image.ts both load these via
+  // dynamic import() specifically so the code path isn't statically analyzed
+  // by the bundler either — belt-and-suspenders with this config entry, not
+  // a substitute for it.
+  serverExternalPackages: ['pptxgenjs', '@napi-rs/canvas', 'pdfjs-dist', 'puppeteer-core', '@sparticuz/chromium'],
+
+  // serverExternalPackages alone is frequently NOT sufficient for
+  // @sparticuz/chromium on Vercel specifically — its runtime assets
+  // (bin/chromium.br, bin/fonts.tar.br, bin/swiftshader.tar.br,
+  // bin/al2023.tar.br; verified present in this repo's installed package)
+  // are large, compressed, non-JS files that Next.js's default output file
+  // tracing frequently fails to detect as "reachable" from the route that
+  // needs them, since they're only ever read via a dynamically-constructed
+  // path at runtime (chromium.executablePath()), not a static require/import
+  // Next.js's tracer can follow. outputFileTracingIncludes tells Next.js
+  // explicitly which extra files to bundle into a given route's deployed
+  // serverless function, regardless of what static analysis finds. Scoped
+  // to only the one route that actually uses puppeteer-core/
+  // @sparticuz/chromium (verified: apps/web/app/api/artifact/export/
+  // route.ts is the only one, transitively via artifact-export-pdf.ts and
+  // artifact-export-image.ts), not applied globally, to avoid bloating
+  // every other route's deployed function size unnecessarily.
+  outputFileTracingIncludes: {
+    '/api/artifact/export': ['./node_modules/@sparticuz/chromium/bin/**'],
+  },
 
   // Lint is configured via .eslintrc and run separately with `next lint` or
   // the ESLint CLI. The `eslint` key is no longer supported in next.config.js
