@@ -10,6 +10,7 @@
     { "path": "packages/governance-layer" },
     { "path": "packages/iskill-runtime" },
     { "path": "packages/artifact-engine-layer" },
+    { "path": "packages/publishing-layer" },
     { "path": "packages/control-plane-layer" },
     { "path": "packages/presentation-layer" }
   ]

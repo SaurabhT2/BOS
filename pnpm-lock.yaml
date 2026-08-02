@@ -621,6 +621,37 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@20.19.43)(@vitest/browser@2.1.9)(jsdom@29.1.1)(msw@2.15.0(@types/node@20.19.43)(typescript@6.0.3))(terser@5.49.0)
 
+  packages/publishing-layer:
+    dependencies:
+      '@brandos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@brandos/governance-config':
+        specifier: workspace:*
+        version: link:../governance-config
+      '@brandos/shared-utils':
+        specifier: workspace:*
+        version: link:../shared-utils
+      '@supabase/supabase-js':
+        specifier: ^2.106.2
+        version: 2.110.7
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      '@vitest/coverage-v8':
+        specifier: ^2.0.5
+        version: 2.1.9(@vitest/browser@2.1.9)(vitest@2.1.9)
+      rimraf:
+        specifier: ^5.0.0
+        version: 5.0.10
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@20.19.43)(@vitest/browser@2.1.9)(jsdom@29.1.1)(msw@2.15.0(@types/node@20.19.43)(typescript@6.0.3))(terser@5.49.0)
+
   packages/runtime-config:
     dependencies:
       '@brandos/auth':
