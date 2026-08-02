@@ -26,3 +26,4 @@ possibility the live schema has columns/constraints not reflected in
 |---|---|---|
 | `20260715120000_persona_intelligence_os_sync.sql` | EM-1.2 / EM-1.3 / EM-1.4 | Adds `intelligence_asset_id`, `synced_to_intelligence_os_at` to `personas`. |
 | `20260715120100_brand_assets_intelligence_os_correlation.sql` | EM-2.6 | Adds `intelligence_asset_id` to `brand_assets`. |
+| `20260801090000_publishing_layer.sql` | Phase 10 — Publishing Foundation | Creates the 7 new `brandos_publishing_*` tables backing `@brandos/publishing-layer` (Artifact, ArtifactVersion, Approval, Destination, DistributionJob, Publication, PublishEvent, RetentionPolicy — see `PUBLISHING_ARCHITECTURE_V1.md` §4/§6). No RLS (consistent with every other table in this file); workspace isolation enforced application-side. |
