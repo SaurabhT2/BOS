@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "composite": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../governance-config" },
+    { "path": "../shared-utils" }
+  ],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

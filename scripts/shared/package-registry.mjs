@@ -49,6 +49,13 @@
  *   that consumes it). RECOGNIZED_SCOPES below is the new shared authority for
  *   "what counts as an internal package prefix"; the call sites above now
  *   derive their matching from it instead of a hardcoded '@brandos/' literal.
+ *
+ * v4 change (Phase 10 — Publishing Foundation):
+ *   @brandos/publishing-layer added at a new L8.5 tier, between
+ *   artifact-engine-layer (L8) and control-plane-layer (L9), and added to
+ *   FORBIDDEN_IN_ROUTES (no CPL proxy for it exists yet). See
+ *   packages/publishing-layer/AGENT_CONTEXT.md and PUBLISHING_LAYER_NOTES.md
+ *   for the dependency rationale.
  */
 
 // ── Recognized internal npm scopes ─────────────────────────────────────────
@@ -77,6 +84,7 @@ export const LAYER_TIERS = [
   ['@brandos/ai-runtime-layer', '@brandos/output-control-layer'],                  // L6 — runtime execution peers
   ['@brandos/governance-layer', '@brandos/iskill-runtime'],                        // L7 — governed execution peers
   ['@brandos/artifact-engine-layer'],                                               // L8 — artifact orchestration
+  ['@brandos/publishing-layer'],                                                    // L8.5 — publishing lifecycle/audit layer (Phase 10, PUBLISHING_ARCHITECTURE_V1.md). Depends only on contracts (ArtifactType) + governance-config (ApprovalGatesSchema/PolicyConfig) — consumes governance policy, does not author it (§8). Deliberately NOT dependent on composition-layer, ai-runtime-layer, output-control-layer, governance-layer, or artifact-engine-layer: Publishing consumes already-rendered bytes and already-governed content; it never re-derives or re-validates them (§2 design principles 3/4). Also deliberately NOT dependent on control-plane-layer (one tier below it) even though CPL currently administers the policy Publishing consumes — see packages/publishing-layer/PUBLISHING_LAYER_NOTES.md for why that's an injected seam, not an import.
   ['@brandos/control-plane-layer'],                                                 // L9 — system integrator / orchestration
   ['@brandos/presentation-layer'],                                                  // L10 — UI components
   ['@brandos/web'],                                                                 // L11 — Next.js app
@@ -114,6 +122,8 @@ export const KNOWN_PACKAGES = [
   { name: '@brandos/iskill-runtime',        dir: 'packages/iskill-runtime' },
   // L8: Artifact pipeline
   { name: '@brandos/artifact-engine-layer', dir: 'packages/artifact-engine-layer' },
+  // L8.5: Publishing (Phase 10)
+  { name: '@brandos/publishing-layer',      dir: 'packages/publishing-layer' },
   // L9-L10: Orchestration + UI
   { name: '@brandos/control-plane-layer',   dir: 'packages/control-plane-layer' },
   { name: '@brandos/presentation-layer',    dir: 'packages/presentation-layer' },
@@ -143,6 +153,7 @@ export const PACKAGE_SRC_MAP = {
   '@brandos/governance-layer':      'packages/governance-layer/src',
   '@brandos/iskill-runtime':        'packages/iskill-runtime/src',
   '@brandos/artifact-engine-layer': 'packages/artifact-engine-layer/src',
+  '@brandos/publishing-layer':      'packages/publishing-layer/src',
   '@brandos/control-plane-layer':   'packages/control-plane-layer/src',
   '@brandos/presentation-layer':    'packages/presentation-layer/src',
 };
@@ -172,6 +183,7 @@ export const BUILD_ORDER = [
   '@brandos/governance-layer',
   '@brandos/iskill-runtime',
   '@brandos/artifact-engine-layer',
+  '@brandos/publishing-layer',
   '@brandos/control-plane-layer',
   '@brandos/presentation-layer',
   '@brandos/web',
@@ -187,6 +199,7 @@ export const FORBIDDEN_IN_ROUTES = [
   '@brandos/artifact-engine-layer',
   '@brandos/iskill-runtime',
   '@brandos/cognition-client',
+  '@brandos/publishing-layer', // Phase 10 — no CPL proxy exists yet; see PUBLISHING_LAYER_NOTES.md item 1.
 ];
 
 // ── Allowed same-level peer imports ──────────────────────────────────────

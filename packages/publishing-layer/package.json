@@ -1,0 +1,35 @@
+{
+  "name": "@brandos/publishing-layer",
+  "version": "1.0.0",
+  "description": "Publishing Foundation (Phase 10) — the system of record for what BrandOS has produced, decided, and distributed. Owns Artifact/ArtifactVersion/Approval/Destination/Publication/DistributionJob/PublishEvent lifecycle and audit trail. Never renders, never regenerates — consumes render outputs from Rendering V2 and governance policy from @brandos/governance-config. See PUBLISHING_ARCHITECTURE_V1.md.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brandos/contracts": "workspace:*",
+    "@brandos/governance-config": "workspace:*",
+    "@brandos/shared-utils": "workspace:*",
+    "@supabase/supabase-js": "^2.106.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^2.0.5",
+    "rimraf": "^5.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^2.0.5"
+  }
+}
