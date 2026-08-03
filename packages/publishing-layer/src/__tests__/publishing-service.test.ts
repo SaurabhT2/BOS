@@ -298,6 +298,78 @@ describe('PublishingService retry / failure handling', () => {
     expect(retried.attempts).toBe(2)
   })
 
+  // Review remediation (Compliance Review §4/§6/§8, Medium severity): a
+  // DistributionJob must persist which rendered format it targeted, and
+  // retryDistribution() must reuse that exact format — not silently fall
+  // back to the version's first rendered output — once a version carries
+  // more than one rendered format.
+  it('submitPublish records which format the job targets, on a version with multiple rendered outputs', async () => {
+    const service = makeService()
+    const { version } = await recordFirstVersion(service) // format: 'html'
+    await service.attachRenderedOutput(version.id, 'ws-1', {
+      format: 'pdf',
+      bytes: new TextEncoder().encode('%PDF-fake'),
+      mimeType: 'application/pdf',
+    })
+    const destination = await service.createDestination({ workspaceId: 'ws-1', actor: owner, publisherId: 'download', name: 'Download', config: {} })
+
+    const job = await service.submitPublish({
+      artifactVersionId: version.id,
+      workspaceId: 'ws-1',
+      actor: owner,
+      destinationId: destination.id,
+      format: 'pdf',
+    })
+    expect(job.format).toBe('pdf')
+  })
+
+  it('defaults the job\'s format to the version\'s first rendered output when no format is requested', async () => {
+    const service = makeService()
+    const { version } = await recordFirstVersion(service) // format: 'html', the only/first output
+    const destination = await service.createDestination({ workspaceId: 'ws-1', actor: owner, publisherId: 'download', name: 'Download', config: {} })
+
+    const job = await service.submitPublish({ artifactVersionId: version.id, workspaceId: 'ws-1', actor: owner, destinationId: destination.id })
+    expect(job.format).toBe('html')
+  })
+
+  it('retryDistribution reuses the ORIGINALLY REQUESTED format, not the version\'s first rendered output, on a multi-format version', async () => {
+    const registry = new PublisherRegistry()
+    const flaky = new FlakyPublisher(1)
+    registry.register(flaky)
+    const service = makeService({ registry })
+
+    // 'html' is attached FIRST (would be renderedOutputs[0]); 'pdf' is
+    // attached second and is the format actually requested below. Before
+    // the fix, retryDistribution() unconditionally used renderedOutputs[0]
+    // ('html') regardless of what the original submitPublish call asked
+    // for — this test fails against that old behavior and passes against
+    // the fix.
+    const { version } = await recordFirstVersion(service) // attaches 'html'
+    await service.attachRenderedOutput(version.id, 'ws-1', {
+      format: 'pdf',
+      bytes: new TextEncoder().encode('%PDF-fake'),
+      mimeType: 'application/pdf',
+    })
+    const destination = await service.createDestination({ workspaceId: 'ws-1', actor: owner, publisherId: 'flaky', name: 'Flaky', config: {} })
+
+    const firstAttempt = await service.submitPublish({
+      artifactVersionId: version.id,
+      workspaceId: 'ws-1',
+      actor: owner,
+      destinationId: destination.id,
+      format: 'pdf',
+    })
+    expect(firstAttempt.format).toBe('pdf')
+    expect(firstAttempt.status).toBe('retrying')
+
+    const retried = await service.retryDistribution(firstAttempt.id, 'ws-1', owner)
+    expect(retried.status).toBe('succeeded')
+    // The job's own format field is immutable across retries — still 'pdf',
+    // never silently switched to 'html' just because 'html' happens to be
+    // renderedOutputs[0].
+    expect(retried.format).toBe('pdf')
+  })
+
   it('marks a DistributionJob as failed (not retrying) once maxAttempts is reached', async () => {
     const registry = new PublisherRegistry()
     const alwaysFails = new FlakyPublisher(999)

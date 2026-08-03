@@ -363,6 +363,7 @@ export class PublishingService {
       artifactVersionId: params.artifactVersionId,
       destinationId: params.destinationId,
       workspaceId: params.workspaceId,
+      format: renderedOutput.format,
       status: 'pending',
       attempts: 0,
       maxAttempts: 3,
@@ -398,8 +399,18 @@ export class PublishingService {
     const version = await this.mustGetVersion(job.artifactVersionId, workspaceId)
     const destination = await repositories.destinations.get(job.destinationId, workspaceId)
     if (!destination) throw new PublishingServiceError(`Destination '${job.destinationId}' not found`, 'not_found')
-    const renderedOutput = version.renderedOutputs[0]
-    if (!renderedOutput) throw new PublishingServiceError(`ArtifactVersion '${job.artifactVersionId}' has no rendered output`, 'invalid_input')
+    // v1.1 fix: reuse the format the job was ORIGINALLY submitted for (job.format),
+    // not version.renderedOutputs[0] — a version can carry multiple rendered
+    // formats, and a retry must target the same one the original request did,
+    // not silently fall back to whichever happens to be first (see
+    // PUBLISHING_ARCHITECTURE_V1.md §4, Compliance Review Section 6/8).
+    const renderedOutput = version.renderedOutputs.find((r) => r.format === job.format)
+    if (!renderedOutput) {
+      throw new PublishingServiceError(
+        `ArtifactVersion '${job.artifactVersionId}' no longer has a rendered output in format '${job.format}'`,
+        'invalid_input',
+      )
+    }
 
     await repositories.events.append(
       buildEvent('distribution_retried', {

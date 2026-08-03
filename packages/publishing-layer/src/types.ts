@@ -259,6 +259,14 @@ export interface DistributionJob {
   readonly artifactVersionId: ArtifactVersionId
   readonly destinationId: DestinationId
   readonly workspaceId: WorkspaceId
+  /**
+   * Which of the version's rendered formats this job targets — set once at
+   * submission (submitPublish), never changed. A version can carry multiple
+   * rendered formats (§4); without this field a retry has no way to know
+   * which one the original request actually meant, and would have to guess
+   * (v1.1 architecture correction — see PUBLISHING_ARCHITECTURE_V1.md §4).
+   */
+  readonly format: RenderedOutputRef['format']
   status: DistributionJobStatus
   attempts: number
   readonly maxAttempts: number

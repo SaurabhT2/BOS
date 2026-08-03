@@ -108,6 +108,11 @@ CREATE TABLE IF NOT EXISTS brandos_publishing_distribution_jobs (
   artifact_version_id uuid NOT NULL REFERENCES brandos_publishing_artifact_versions (id),
   destination_id uuid NOT NULL REFERENCES brandos_publishing_destinations (id),
   workspace_id text NOT NULL,
+  -- v1.1: which of the version's rendered formats this job targets, set once
+  -- at submission and reused on retry (see PUBLISHING_ARCHITECTURE_V1.md §4 —
+  -- a job with no format reference had no way to know which rendered output
+  -- a retry should reuse). CHECK mirrors RenderedOutputRef['format'] in types.ts.
+  format text NOT NULL CHECK (format IN ('html', 'pdf', 'pptx', 'png', 'email')),
   status text NOT NULL,
   attempts integer NOT NULL DEFAULT 0,
   max_attempts integer NOT NULL DEFAULT 3,

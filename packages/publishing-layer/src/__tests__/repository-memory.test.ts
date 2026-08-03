@@ -124,6 +124,7 @@ describe('InMemoryDistributionJobRepository', () => {
       artifactVersionId: 'v1',
       destinationId: 'd1',
       workspaceId: 'w1',
+      format: 'html',
       status: 'pending',
       attempts: 0,
       maxAttempts: 3,
