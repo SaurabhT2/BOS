@@ -1,7 +1,7 @@
 # AGENT_CONTEXT — @brandos/publishing-layer
 
 **Layer:** L8.5 — Publishing (Phase 10)
-**Maturity:** New (Phase 10, initial implementation of `PUBLISHING_ARCHITECTURE_V1.md` §1–§8)
+**Maturity:** New (Phase 10, initial implementation of `../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md` §1–§8; remediated per `../../docs/reviews/PUBLISHING_FOUNDATION_COMPLIANCE_REVIEW.md` — see that review's Section 9 for the one Medium-severity fix applied: `DistributionJob` now persists its target rendered format)
 **Build order position:** inserted after `@brandos/artifact-engine-layer`, before `@brandos/control-plane-layer`
 **Last updated:** Phase 10 initial implementation
 
@@ -11,7 +11,7 @@
 
 ## Package Purpose
 
-The system of record for what BrandOS has produced, decided, and distributed, once a renderer has already produced bytes. Owns `Artifact` → `ArtifactVersion` → `Approval` / `Publication` / `DistributionJob` → `PublishEvent` (§4 of `PUBLISHING_ARCHITECTURE_V1.md`), the lifecycle state machine (§5), the `Publisher` plugin registry (§7), and the audit-trail projector (§4/§8). Full design rationale: `PUBLISHING_ARCHITECTURE_V1.md`. Scope boundary and what was deliberately not built in this engagement: `PUBLISHING_LAYER_NOTES.md` (same directory).
+The system of record for what BrandOS has produced, decided, and distributed, once a renderer has already produced bytes. Owns `Artifact` → `ArtifactVersion` → `Approval` / `Publication` / `DistributionJob` → `PublishEvent` (§4 of `../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md`), the lifecycle state machine (§5), the `Publisher` plugin registry (§7), and the audit-trail projector (§4/§8). Full design rationale: `../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md`. Scope boundary and what was deliberately not built in this engagement: `PUBLISHING_LAYER_NOTES.md` (same directory).
 
 ---
 

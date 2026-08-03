@@ -1,12 +1,12 @@
 # Publishing Layer — Implementation Notes
 
 This is an engineering scope/limitations note, not a second architecture
-document. `PUBLISHING_ARCHITECTURE_V1.md` remains the sole source of truth
+document. `../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md` remains the sole source of truth
 for design decisions; nothing here revises it.
 
 ## What this package implements
 
-The parts of `PUBLISHING_ARCHITECTURE_V1.md` §13 calls "stable enough to
+The parts of `../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md` §13 calls "stable enough to
 build against": the domain model (§4), the lifecycle (§5), and the
 Publisher contract shape (§7), plus the persistence (§6), governance (§8),
 and Publisher-registry (§7) machinery those three sections require to be
@@ -30,7 +30,7 @@ usable rather than purely theoretical:
 
 Every item below is a genuine stop-at-the-boundary decision, not an
 oversight — each has either an explicit textual basis in
-`PUBLISHING_ARCHITECTURE_V1.md` §13, a concrete conflict discovered by
+`../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md` §13, a concrete conflict discovered by
 reading the actual codebase, or both.
 
 ### 1. HTTP API routes / admin endpoints
@@ -95,7 +95,7 @@ acts when called, and only hard-deletes bytes when a workspace's
 ### 5. LinkedIn / Facebook / Twitter / Email / CMS / OAuth / Analytics / Campaigns / Scheduling / Workflow engines
 
 Explicitly out of scope per the engagement brief and named in
-`PUBLISHING_ARCHITECTURE_V1.md` §7/§12/§13 as future plugins. The registry
+`../../docs/architecture/PUBLISHING_ARCHITECTURE_V1.md` §7/§12/§13 as future plugins. The registry
 (`publisher-registry.ts`) is open — adding any of these later means one
 new file plus one `registry.register(...)` call, never a change to
 lifecycle/audit/policy code, which is the entire point of §7's plugin
