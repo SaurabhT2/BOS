@@ -97,8 +97,33 @@ const nextConfig = {
   // route.ts is the only one, transitively via artifact-export-pdf.ts and
   // artifact-export-image.ts), not applied globally, to avoid bloating
   // every other route's deployed function size unnecessarily.
+  // pptxgenjs needs the same outputFileTracingIncludes treatment as
+  // @sparticuz/chromium's bin/ assets above, for a related but distinct
+  // reason: it is loaded via createRequire(process.cwd() + '/_') (see
+  // artifact-export-pptx.ts's own header comment for why — avoiding a real,
+  // previously-diagnosed ESM/CJS dual-package hazard in its dependency
+  // jszip), and a createRequire() call whose argument is a RUNTIME-COMPUTED
+  // STRING is invisible to @vercel/nft's static file tracer entirely —
+  // unlike @sparticuz/chromium/puppeteer-core, which use a literal `await
+  // import('pkg-name')` the tracer CAN follow. Verified directly: building
+  // this app and inspecting the resulting
+  // .next/server/app/api/artifact/export/route.js.nft.json trace manifest
+  // shows ZERO pptxgenjs files and ZERO jszip files without this entry,
+  // despite pptxgenjs being correctly listed in serverExternalPackages —
+  // serverExternalPackages controls bundling, not tracing. This is the
+  // deployment-side root cause of the production "Cannot find module
+  // 'pptxgenjs'" error: local dev/build always has the full node_modules
+  // tree regardless of tracing; Vercel's deployed function ships only the
+  // traced subset. NOT fixed by switching pptxgenjs to a literal dynamic
+  // import() instead — that would reintroduce the exact ESM/CJS jszip
+  // failure createRequire() was chosen to avoid. This is a deployment-
+  // packaging fix; artifact-export-pptx.ts's loading mechanism is untouched.
   outputFileTracingIncludes: {
-    '/api/artifact/export': ['./node_modules/@sparticuz/chromium/bin/**'],
+    '/api/artifact/export': [
+      './node_modules/@sparticuz/chromium/bin/**',
+      './node_modules/pptxgenjs/**',
+      './node_modules/jszip/**',
+    ],
   },
 
   // Lint is configured via .eslintrc and run separately with `next lint` or
