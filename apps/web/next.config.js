@@ -118,11 +118,63 @@ const nextConfig = {
   // import() instead — that would reintroduce the exact ESM/CJS jszip
   // failure createRequire() was chosen to avoid. This is a deployment-
   // packaging fix; artifact-export-pptx.ts's loading mechanism is untouched.
+  // pptxgenjs needs the same outputFileTracingIncludes treatment as
+  // @sparticuz/chromium's bin/ assets above, for a related but distinct
+  // reason: it is loaded via createRequire(process.cwd() + '/_') (see
+  // artifact-export-pptx.ts's own header comment for why — avoiding a real,
+  // previously-diagnosed ESM/CJS dual-package hazard in its dependency
+  // jszip), and a createRequire() call whose argument is a RUNTIME-COMPUTED
+  // STRING is invisible to @vercel/nft's static file tracer entirely —
+  // unlike @sparticuz/chromium/puppeteer-core, which use a literal `await
+  // import('pkg-name')` the tracer CAN follow, including their own full
+  // transitive dependency trees automatically (confirmed: puppeteer-core
+  // alone traced 132 files with no extra config needed).
+  //
+  // v2 of this fix (the first version only included pptxgenjs/** and
+  // jszip/** themselves) — production evidence
+  // (Error: Cannot find module 'setimmediate', required from
+  // jszip/lib/utils.js) proved that including a package's OWN directory is
+  // NOT enough under pnpm's structure. pnpm gives each resolved package its
+  // own ISOLATED node_modules directory
+  // (node_modules/.pnpm/<pkg>@<version>/node_modules/) containing that
+  // package itself PLUS symlinks to exactly its own direct dependencies —
+  // sibling entries, not descendants of the package's own folder. A glob
+  // like './node_modules/jszip/**' only reaches inside the jszip folder;
+  // it does not reach 'setimmediate', 'lie', 'pako', or 'readable-stream',
+  // which live one level up, as siblings, inside jszip's OWN isolated
+  // node_modules directory. This was proven directly, not assumed: `ls
+  // node_modules/.pnpm/jszip@3.10.1/node_modules/` shows exactly
+  // [jszip, lie, pako, readable-stream, setimmediate] side by side.
+  //
+  // The fix: include each PACKAGE'S OWN isolated node_modules directory
+  // (one level up from the package folder itself), for every package in
+  // the chain that itself has further dependencies — every other package
+  // in the tree is then automatically captured as a sibling inside one of
+  // these. The full resolved tree below was read directly out of
+  // pnpm-lock.yaml (not guessed, not walked one production error at a
+  // time): pptxgenjs -> {https, image-size -> {queue -> {inherits}}, jszip
+  // -> {lie -> {immediate}, pako, readable-stream -> {core-util-is,
+  // isarray, process-nextick-args, safe-buffer, string_decoder,
+  // util-deprecate}, setimmediate}}. (@types/node and its own dependency
+  // undici-types are pptxgenjs's one other declared dependency — omitted
+  // deliberately: they are TypeScript type declarations only, never
+  // require()'d at runtime, so they need no entry here.) Every package
+  // above with children needs its own glob root; every leaf package is
+  // then a sibling inside one of those six directories automatically:
+  //   pptxgenjs, image-size, queue, jszip, lie, readable-stream
+  // Version numbers are wildcarded (pkg@*) rather than pinned, so a future
+  // version bump of any of these (from a routine dependency update) does
+  // not silently reintroduce this exact bug by making a pinned path stop
+  // matching.
   outputFileTracingIncludes: {
     '/api/artifact/export': [
       './node_modules/@sparticuz/chromium/bin/**',
-      './node_modules/pptxgenjs/**',
-      './node_modules/jszip/**',
+      '../../node_modules/.pnpm/pptxgenjs@*/node_modules/**',
+      '../../node_modules/.pnpm/image-size@*/node_modules/**',
+      '../../node_modules/.pnpm/queue@*/node_modules/**',
+      '../../node_modules/.pnpm/jszip@*/node_modules/**',
+      '../../node_modules/.pnpm/lie@*/node_modules/**',
+      '../../node_modules/.pnpm/readable-stream@*/node_modules/**',
     ],
   },
 
