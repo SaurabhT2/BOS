@@ -166,15 +166,48 @@ const nextConfig = {
   // version bump of any of these (from a routine dependency update) does
   // not silently reintroduce this exact bug by making a pinned path stop
   // matching.
+  // v3 of this fix (deployment audit, PR #11 -> real Vercel failure):
+  // v2's paths above used a WILDCARD embedded INSIDE a path segment
+  // ('pptxgenjs@*') to stay robust against version bumps. This built and
+  // traced correctly in every local `next build` performed for v2 — but
+  // broke the actual Vercel deployment. Root cause, confirmed via Vercel's
+  // own structured deployment metadata (Vercel:get_deployment for the
+  // failing deployment, not just its build log text, which showed a
+  // misleadingly generic "Could not identify Next.js version" message):
+  //   "errorCode": "ENOENT", "errorStep": "direct:build"
+  // — a raw filesystem "path does not exist" error during the build step
+  // itself, confirmed to occur on the FIRST, git-push-triggered deployment
+  // attempt ("source": "git"), not something specific to a manual redeploy.
+  // Next.js's own local file tracer clearly supports 'pkg@*'-style
+  // mid-segment wildcards (every local build traced all 19 required
+  // packages correctly — see the v2 comment block above). Vercel's own
+  // build-time path resolution for outputFileTracingIncludes, running
+  // under Turbopack ("bundler": "turbopack" per the same deployment
+  // metadata), does not appear to support a wildcard embedded inside a
+  // path segment the same way — it appears to treat 'pptxgenjs@*' as a
+  // literal directory name to stat, which does not exist (the real
+  // directory is named 'pptxgenjs@4.0.1'), producing ENOENT.
+  //
+  // Fix: use exact, pinned versions instead of a mid-segment wildcard —
+  // trading away automatic robustness to a future version bump (a real,
+  // disclosed tradeoff, not a hidden one) for correctness against Vercel's
+  // actual build pipeline today, which is what matters for a production
+  // deployment fix. MAINTENANCE NOTE for whoever bumps pptxgenjs, jszip, or
+  // any of their listed dependencies in the future: the exact version
+  // segment below must be updated to match, or this exact deployment
+  // failure will return. Versions below match pnpm-lock.yaml exactly as of
+  // this fix (verified by reading the lockfile directly, not assumed):
+  //   pptxgenjs@4.0.1, image-size@1.2.1, queue@6.0.2, jszip@3.10.1,
+  //   lie@3.3.0, readable-stream@2.3.8
   outputFileTracingIncludes: {
     '/api/artifact/export': [
       './node_modules/@sparticuz/chromium/bin/**',
-      '../../node_modules/.pnpm/pptxgenjs@*/node_modules/**',
-      '../../node_modules/.pnpm/image-size@*/node_modules/**',
-      '../../node_modules/.pnpm/queue@*/node_modules/**',
-      '../../node_modules/.pnpm/jszip@*/node_modules/**',
-      '../../node_modules/.pnpm/lie@*/node_modules/**',
-      '../../node_modules/.pnpm/readable-stream@*/node_modules/**',
+      '../../node_modules/.pnpm/pptxgenjs@4.0.1/node_modules/**',
+      '../../node_modules/.pnpm/image-size@1.2.1/node_modules/**',
+      '../../node_modules/.pnpm/queue@6.0.2/node_modules/**',
+      '../../node_modules/.pnpm/jszip@3.10.1/node_modules/**',
+      '../../node_modules/.pnpm/lie@3.3.0/node_modules/**',
+      '../../node_modules/.pnpm/readable-stream@2.3.8/node_modules/**',
     ],
   },
 
