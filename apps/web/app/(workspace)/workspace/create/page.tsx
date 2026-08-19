@@ -586,10 +586,10 @@ function CreatePageInner() {
     if (exportingFormat) return
     setExportingFormat(fmt)
     try {
-      const res = await fetch('/api/artifact/export', {
+      const res = await fetch(`/api/artifact/export/${fmt}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format: fmt, artifact }),
+        body: JSON.stringify({ artifact }),
       })
       if (!res.ok) { console.error('[create] Export failed:', await res.json().catch(() => ({}))); return }
       const blob = await res.blob()
@@ -612,10 +612,10 @@ function CreatePageInner() {
     setExportingFormat('pdf' as any) // reuse the spinner state; canva renders via the same PDF path under the hood
     setCanvaExportError(null)
     try {
-      const res = await fetch('/api/artifact/export', {
+      const res = await fetch('/api/artifact/export/canva', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format: 'canva', artifact }),
+        body: JSON.stringify({ artifact }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {

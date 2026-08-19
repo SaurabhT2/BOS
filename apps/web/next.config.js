@@ -84,124 +84,71 @@ const nextConfig = {
   // serverExternalPackages alone is frequently NOT sufficient for
   // @sparticuz/chromium on Vercel specifically — its runtime assets
   // (bin/chromium.br, bin/fonts.tar.br, bin/swiftshader.tar.br,
-  // bin/al2023.tar.br; verified present in this repo's installed package)
-  // are large, compressed, non-JS files that Next.js's default output file
-  // tracing frequently fails to detect as "reachable" from the route that
-  // needs them, since they're only ever read via a dynamically-constructed
-  // path at runtime (chromium.executablePath()), not a static require/import
-  // Next.js's tracer can follow. outputFileTracingIncludes tells Next.js
-  // explicitly which extra files to bundle into a given route's deployed
-  // serverless function, regardless of what static analysis finds. Scoped
-  // to only the one route that actually uses puppeteer-core/
-  // @sparticuz/chromium (verified: apps/web/app/api/artifact/export/
-  // route.ts is the only one, transitively via artifact-export-pdf.ts and
-  // artifact-export-image.ts), not applied globally, to avoid bloating
-  // every other route's deployed function size unnecessarily.
-  // pptxgenjs needs the same outputFileTracingIncludes treatment as
-  // @sparticuz/chromium's bin/ assets above, for a related but distinct
-  // reason: it is loaded via createRequire(process.cwd() + '/_') (see
-  // artifact-export-pptx.ts's own header comment for why — avoiding a real,
-  // previously-diagnosed ESM/CJS dual-package hazard in its dependency
-  // jszip), and a createRequire() call whose argument is a RUNTIME-COMPUTED
-  // STRING is invisible to @vercel/nft's static file tracer entirely —
-  // unlike @sparticuz/chromium/puppeteer-core, which use a literal `await
-  // import('pkg-name')` the tracer CAN follow. Verified directly: building
-  // this app and inspecting the resulting
-  // .next/server/app/api/artifact/export/route.js.nft.json trace manifest
-  // shows ZERO pptxgenjs files and ZERO jszip files without this entry,
-  // despite pptxgenjs being correctly listed in serverExternalPackages —
-  // serverExternalPackages controls bundling, not tracing. This is the
-  // deployment-side root cause of the production "Cannot find module
-  // 'pptxgenjs'" error: local dev/build always has the full node_modules
-  // tree regardless of tracing; Vercel's deployed function ships only the
-  // traced subset. NOT fixed by switching pptxgenjs to a literal dynamic
-  // import() instead — that would reintroduce the exact ESM/CJS jszip
-  // failure createRequire() was chosen to avoid. This is a deployment-
-  // packaging fix; artifact-export-pptx.ts's loading mechanism is untouched.
-  // pptxgenjs needs the same outputFileTracingIncludes treatment as
-  // @sparticuz/chromium's bin/ assets above, for a related but distinct
-  // reason: it is loaded via createRequire(process.cwd() + '/_') (see
-  // artifact-export-pptx.ts's own header comment for why — avoiding a real,
-  // previously-diagnosed ESM/CJS dual-package hazard in its dependency
-  // jszip), and a createRequire() call whose argument is a RUNTIME-COMPUTED
-  // STRING is invisible to @vercel/nft's static file tracer entirely —
-  // unlike @sparticuz/chromium/puppeteer-core, which use a literal `await
-  // import('pkg-name')` the tracer CAN follow, including their own full
-  // transitive dependency trees automatically (confirmed: puppeteer-core
-  // alone traced 132 files with no extra config needed).
+  // bin/al2023.tar.br) are large, compressed, non-JS files that Next.js's
+  // default output file tracing frequently fails to detect as "reachable"
+  // from the route that needs them, since they're only ever read via a
+  // dynamically-constructed path at runtime (chromium.executablePath()),
+  // not a static require/import the tracer can follow.
+  // outputFileTracingIncludes tells Next.js explicitly which extra files
+  // to bundle into a given route's deployed serverless function.
   //
-  // v2 of this fix (the first version only included pptxgenjs/** and
-  // jszip/** themselves) — production evidence
-  // (Error: Cannot find module 'setimmediate', required from
-  // jszip/lib/utils.js) proved that including a package's OWN directory is
-  // NOT enough under pnpm's structure. pnpm gives each resolved package its
-  // own ISOLATED node_modules directory
-  // (node_modules/.pnpm/<pkg>@<version>/node_modules/) containing that
-  // package itself PLUS symlinks to exactly its own direct dependencies —
-  // sibling entries, not descendants of the package's own folder. A glob
-  // like './node_modules/jszip/**' only reaches inside the jszip folder;
-  // it does not reach 'setimmediate', 'lie', 'pako', or 'readable-stream',
-  // which live one level up, as siblings, inside jszip's OWN isolated
-  // node_modules directory. This was proven directly, not assumed: `ls
-  // node_modules/.pnpm/jszip@3.10.1/node_modules/` shows exactly
-  // [jszip, lie, pako, readable-stream, setimmediate] side by side.
+  // pptxgenjs needs the equivalent treatment for a different reason: it's
+  // loaded via createRequire(process.cwd() + '/_') (see
+  // artifact-export-pptx.ts's own header for why — avoiding an ESM/CJS
+  // dual-package hazard in its dependency jszip), and a createRequire()
+  // call whose argument is a RUNTIME-COMPUTED STRING is invisible to
+  // @vercel/nft's static file tracer entirely — unlike
+  // @sparticuz/chromium/puppeteer-core, which use a literal
+  // `await import('pkg-name')` the tracer CAN follow on its own.
   //
-  // The fix: include each PACKAGE'S OWN isolated node_modules directory
-  // (one level up from the package folder itself), for every package in
-  // the chain that itself has further dependencies — every other package
-  // in the tree is then automatically captured as a sibling inside one of
-  // these. The full resolved tree below was read directly out of
-  // pnpm-lock.yaml (not guessed, not walked one production error at a
-  // time): pptxgenjs -> {https, image-size -> {queue -> {inherits}}, jszip
-  // -> {lie -> {immediate}, pako, readable-stream -> {core-util-is,
-  // isarray, process-nextick-args, safe-buffer, string_decoder,
-  // util-deprecate}, setimmediate}}. (@types/node and its own dependency
-  // undici-types are pptxgenjs's one other declared dependency — omitted
-  // deliberately: they are TypeScript type declarations only, never
-  // require()'d at runtime, so they need no entry here.) Every package
-  // above with children needs its own glob root; every leaf package is
-  // then a sibling inside one of those six directories automatically:
-  //   pptxgenjs, image-size, queue, jszip, lie, readable-stream
-  // Version numbers are wildcarded (pkg@*) rather than pinned, so a future
-  // version bump of any of these (from a routine dependency update) does
-  // not silently reintroduce this exact bug by making a pinned path stop
-  // matching.
-  // v3 of this fix (deployment audit, PR #11 -> real Vercel failure):
-  // v2's paths above used a WILDCARD embedded INSIDE a path segment
-  // ('pptxgenjs@*') to stay robust against version bumps. This built and
-  // traced correctly in every local `next build` performed for v2 — but
-  // broke the actual Vercel deployment. Root cause, confirmed via Vercel's
-  // own structured deployment metadata (Vercel:get_deployment for the
-  // failing deployment, not just its build log text, which showed a
-  // misleadingly generic "Could not identify Next.js version" message):
-  //   "errorCode": "ENOENT", "errorStep": "direct:build"
-  // — a raw filesystem "path does not exist" error during the build step
-  // itself, confirmed to occur on the FIRST, git-push-triggered deployment
-  // attempt ("source": "git"), not something specific to a manual redeploy.
-  // Next.js's own local file tracer clearly supports 'pkg@*'-style
-  // mid-segment wildcards (every local build traced all 19 required
-  // packages correctly — see the v2 comment block above). Vercel's own
-  // build-time path resolution for outputFileTracingIncludes, running
-  // under Turbopack ("bundler": "turbopack" per the same deployment
-  // metadata), does not appear to support a wildcard embedded inside a
-  // path segment the same way — it appears to treat 'pptxgenjs@*' as a
-  // literal directory name to stat, which does not exist (the real
-  // directory is named 'pptxgenjs@4.0.1'), producing ENOENT.
+  // FUNCTION-SIZE SPLIT (this fix): these used to all live under one
+  // '/api/artifact/export' key because every format was one route/one
+  // function. Bundling Chromium (~70MB) + puppeteer-core + the full
+  // pptxgenjs/jszip tree into that single function is what pushed it over
+  // Vercel's 250MB uncompressed function-size limit — the build always
+  // succeeded, but the deployment itself failed right after, during
+  // "Deploying outputs...". Now that pdf/pptx/png are separate routes
+  // (see lib/artifact-export-request.ts), each gets ONLY the includes it
+  // actually needs: pdf and png both render via headless Chromium
+  // (artifact-export-pdf.ts, artifact-export-image.ts) and need the
+  // chromium bin/ glob; pptx needs the pptxgenjs/jszip globs and nothing
+  // Chromium-related. Splitting these keeps each function's uncompressed
+  // size well clear of the 250MB ceiling instead of stacking all three
+  // dependency trees into one bundle.
   //
-  // Fix: use exact, pinned versions instead of a mid-segment wildcard —
-  // trading away automatic robustness to a future version bump (a real,
-  // disclosed tradeoff, not a hidden one) for correctness against Vercel's
-  // actual build pipeline today, which is what matters for a production
-  // deployment fix. MAINTENANCE NOTE for whoever bumps pptxgenjs, jszip, or
-  // any of their listed dependencies in the future: the exact version
-  // segment below must be updated to match, or this exact deployment
-  // failure will return. Versions below match pnpm-lock.yaml exactly as of
-  // this fix (verified by reading the lockfile directly, not assumed):
+  // pnpm detail (unchanged from the original single-route fix, still
+  // applies per-package here): pnpm gives each resolved package its own
+  // ISOLATED node_modules directory
+  // (node_modules/.pnpm/<pkg>@<version>/node_modules/) containing the
+  // package itself PLUS symlinks to its direct dependencies as siblings,
+  // not descendants — so a glob must target that isolated directory one
+  // level up from the package folder, not the package folder itself, or
+  // transitive deps (e.g. jszip's 'setimmediate', 'lie', 'pako',
+  // 'readable-stream') go missing at runtime with "Cannot find module".
+  // Versions are pinned, not wildcarded ('pkg@4.0.1', not 'pkg@*') —
+  // Vercel's build pipeline (Turbopack) does not resolve a wildcard
+  // embedded inside a path segment the way local `next build` does, and
+  // treats e.g. 'pptxgenjs@*' as a literal, nonexistent directory name
+  // (ENOENT) rather than a pattern. MAINTENANCE NOTE: bumping pptxgenjs,
+  // jszip, or any of their listed dependencies requires updating the
+  // pinned version segment below to match, or this exact failure mode
+  // returns. Versions below match pnpm-lock.yaml as of this fix:
   //   pptxgenjs@4.0.1, image-size@1.2.1, queue@6.0.2, jszip@3.10.1,
   //   lie@3.3.0, readable-stream@2.3.8
   outputFileTracingIncludes: {
-    '/api/artifact/export': [
+    '/api/artifact/export/pdf': [
       './node_modules/@sparticuz/chromium/bin/**',
+    ],
+    '/api/artifact/export/png': [
+      './node_modules/@sparticuz/chromium/bin/**',
+    ],
+    // canva's fallback path (lib/canva-export.ts) renders a PDF under the
+    // hood via the same artifact-export-pdf.ts renderer pdf/route.ts uses
+    // — needs the same Chromium bin/ assets for the same reason.
+    '/api/artifact/export/canva': [
+      './node_modules/@sparticuz/chromium/bin/**',
+    ],
+    '/api/artifact/export/pptx': [
       '../../node_modules/.pnpm/pptxgenjs@4.0.1/node_modules/**',
       '../../node_modules/.pnpm/image-size@1.2.1/node_modules/**',
       '../../node_modules/.pnpm/queue@6.0.2/node_modules/**',

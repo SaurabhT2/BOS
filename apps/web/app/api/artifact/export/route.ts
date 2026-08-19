@@ -1,235 +1,81 @@
 /**
- * POST /api/artifact/export
+ * POST /api/artifact/export  (legacy path — kept for backward compatibility)
  *
- * P0-G: Canonical artifact export endpoint.
+ * FUNCTION-SIZE SPLIT (post-mortem: hotfix/vercel-file-tracing-pptxgenjs):
+ * This used to be the single route for html/json/pdf/pptx/png/canva.
+ * Build succeeded every time, but the deployment itself failed right
+ * after — Vercel's "Deploying outputs..." step was rejecting the build
+ * because the compiled function bundle (Next.js runtime + @sparticuz/
+ * chromium ~70MB + puppeteer-core + pptxgenjs/jszip, all forced together
+ * via outputFileTracingIncludes) landed at or over the platform's 250MB
+ * uncompressed Serverless Function limit.
  *
- * Consumes: ArtifactV2 (CarouselArtifact | DeckArtifact | ReportArtifact)
- *           posted as JSON body, dispatched on the artifact's own
- *           `artifact_type` discriminator — no new request param needed,
- *           every ArtifactV2 already carries this field.
- * Produces: HTML, JSON, PDF, or PPTX download.
+ * Fix: format-specific routes now live at
+ *   /api/artifact/export/{html,json,pdf,pptx,png,canva}
+ * each with its own isolated function bundle (see
+ * lib/artifact-export-request.ts for the shared parsing logic, and the
+ * sibling route.ts files for the per-format handlers).
  *
- * Architecture:
- *   - This endpoint remains the SOLE export authority (unchanged from the
- *     original P0-G doc comment).
- *   - Rendering logic itself now lives in lib/artifact-export-html.ts,
- *     lib/artifact-export-pdf.ts, and lib/artifact-export-pptx.ts — this
- *     route is a thin dispatcher (format × artifact_type → renderer call),
- *     matching the existing apps/web convention of route-as-dispatcher
- *     with logic in lib/ (see lib/repurpose.ts).
- *   - Renderer logic is pure: it only consumes the posted artifact.
- *     No LLM calls. No inference. No reconstruction of structure.
- *     (P0-F law, unchanged.)
- *   - PRIOR GAP CLOSED: this route previously only validated/rendered the
- *     carousel shape (`slides`/`cards`), even though the UI's exportArtifact()
- *     in create/page.tsx already called this route for deck and report
- *     results too. Deck export worked by accident (decks also have `slides`,
- *     so they passed the old shape check, but rendered with carousel-only
- *     field names — headline/role/bullets — producing a blank or malformed
- *     HTML/JSON). Report export was completely broken (reports have
- *     `sections`, not `slides`, so they always hit the "no slides" 422).
- *     Both are now rendered correctly via their own dedicated renderers.
+ * This file only exists so any caller still POSTing to the old bare
+ * /api/artifact/export path doesn't break. It deliberately does NOT import
+ * dispatchPdfExport / dispatchPptxExport / dispatchImageExport, nor
+ * lib/artifact-export-canva.ts (whose Canva fallback path also renders a
+ * PDF under the hood) — doing so would drag Chromium and/or pptxgenjs
+ * straight back into this function and recreate the exact problem the
+ * split fixes. Only html/json are cheap enough to handle inline here;
+ * pdf/pptx/png/canva are forwarded with a 308 redirect (which preserves
+ * method and body) to their real routes.
  *
- * Body:
- *   { format: 'html' | 'json' | 'pdf' | 'pptx', artifact: ArtifactV2 }
- *
- * Returns:
- *   - format=json: application/json download
- *   - format=html: text/html download (self-contained, themed per type)
- *   - format=pdf:  application/pdf download (prints the same HTML)
- *   - format=pptx: application/vnd...presentation download (native slides)
+ * New code should call the format-specific paths directly — see
+ * app/(workspace)/workspace/create/page.tsx's exportArtifact() /
+ * exportToCanva(), which already do.
  */
-
 import { NextRequest, NextResponse } from 'next/server'
-import { requireUser } from '@/lib/supabase-server'
-import {
-  safeFilenameStem,
-  type SupportedHtmlArtifactType,
-} from '@/lib/artifact-export-html'
-import { dispatchHtmlExport, dispatchPdfExport, dispatchPptxExport, dispatchImageExport } from '@/lib/registry-dispatch'
-import JSZip from 'jszip'
-import type { SupportedPptxArtifactType } from '@/lib/artifact-export-pptx'
-import { importArtifactToCanvaFallback } from '@/lib/canva-export'
-import { isCanvaFieldRendererAvailable, submitAutofillJob } from '@/lib/canva-field-renderer'
-import type { CarouselArtifact } from '@brandos/contracts'
-import {
-  getCanvaOAuthConfig,
-  refreshCanvaToken,
-  decryptCanvaAccessToken,
-  decryptCanvaRefreshToken,
-  encryptCanvaTokens,
-  expiresAtFromExpiresIn,
-} from '@/lib/canva-oauth'
-import { getWorkspaceOAuthConnection, refreshWorkspaceOAuthConnection } from '@brandos/auth'
+import { parseExportRequest, CONTENT_TYPES, exportErrorResponse } from '@/lib/artifact-export-request'
+import { dispatchHtmlExport } from '@/lib/registry-dispatch-html'
 
 export const runtime = 'nodejs'
 
-// PDF/PPTX rendering (headless Chromium launch, pptxgenjs file assembly) can
-// exceed the Next.js default route timeout on larger decks/reports — this
-// mirrors the existing pattern of explicit runtime tuning for heavier routes
-// elsewhere in apps/web (see /api/generate-with-progress).
-export const maxDuration = 60
-
-type ExportFormat = 'html' | 'json' | 'pdf' | 'pptx' | 'canva' | 'png'
-
-// SPRINT1-FIX (F-01): 'newsletter' added — was absent, causing HTTP 400 for
-// every newsletter export despite the compiler, governance, and React renderer
-// all being production-ready.
-const SUPPORTED_ARTIFACT_TYPES: readonly SupportedHtmlArtifactType[] = ['carousel', 'deck', 'report', 'newsletter']
-
-function isSupportedArtifactType(value: unknown): value is SupportedHtmlArtifactType {
-  return typeof value === 'string' && (SUPPORTED_ARTIFACT_TYPES as readonly string[]).includes(value)
-}
-
-/**
- * Per-type minimal shape validation before rendering.
- * Mirrors the original route's "no slides → 422" guard, generalized to
- * each artifact type's actual required collection (slides vs sections).
- *
- * SPRINT1-FIX (F-01): newsletter case added — newsletters use `sections`, not `slides`.
- */
-function validateArtifactShape(
-  artifactType: SupportedHtmlArtifactType,
-  bp: Record<string, unknown>
-): string | null {
-  if (artifactType === 'report' || artifactType === 'newsletter') {
-    const sections = Array.isArray(bp.sections) ? bp.sections : []
-    if (sections.length === 0) {
-      return `${artifactType === 'report' ? 'Report' : 'Newsletter'} has no sections — cannot export an empty ${artifactType}.`
-    }
-    return null
-  }
-  // carousel and deck both use `slides` (carousel also accepted legacy `cards`)
-  const slides = Array.isArray(bp.slides) ? bp.slides : Array.isArray(bp.cards) ? bp.cards : []
-  if (slides.length === 0) {
-    return `${artifactType === 'carousel' ? 'Carousel' : 'Deck'} has no slides — cannot export an empty ${artifactType}.`
-  }
-  return null
-}
-
-const CONTENT_TYPES: Record<Exclude<ExportFormat, 'canva'>, string> = {
-  html: 'text/html; charset=utf-8',
-  json: 'application/json',
-  pdf:  'application/pdf',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // PNG export produces one image PER SLIDE (RENDERING_ARCHITECTURE_V2.md §4.4) —
-  // a single HTTP response can only carry one file, so multiple images are
-  // packaged as a zip archive, not raw image/png bytes.
-  png:  'application/zip',
-}
-
-/**
- * Resolve a usable (non-expired) Canva access token for this workspace,
- * refreshing it first if it's expired or about to expire. Returns null
- * with a reason if there's no connection, no Canva config, or refresh
- * fails — callers turn that into the appropriate HTTP response.
- */
-async function resolveCanvaAccessToken(
-  workspaceId: string
-): Promise<{ token: string } | { error: string; status: number }> {
-  const config = getCanvaOAuthConfig()
-  if (!config) {
-    return { error: 'Canva integration is not configured on this server.', status: 503 }
-  }
-
-  const { data: connection, error } = await getWorkspaceOAuthConnection(workspaceId, 'canva')
-  if (error) return { error, status: 500 }
-  if (!connection) {
-    return { error: 'Canva is not connected for this workspace. Connect it in Settings → Integrations.', status: 409 }
-  }
-
-  const expiresAt = connection.expires_at ? new Date(connection.expires_at).getTime() : null
-  const isExpiredOrSoon = expiresAt !== null && expiresAt - Date.now() < 60_000 // refresh 60s early
-
-  if (!isExpiredOrSoon) {
-    const token = decryptCanvaAccessToken(connection)
-    if (!token) return { error: 'Failed to decrypt stored Canva access token.', status: 500 }
-    return { token }
-  }
-
-  const refreshToken = decryptCanvaRefreshToken(connection)
-  if (!refreshToken) {
-    return { error: 'Canva access token expired and no refresh token is available. Please reconnect Canva.', status: 409 }
-  }
-
-  const refreshed = await refreshCanvaToken(config, refreshToken)
-  if (!refreshed.ok || !refreshed.tokens) {
-    return { error: refreshed.error ?? 'Failed to refresh Canva access token. Please reconnect Canva.', status: 502 }
-  }
-
-  const encrypted = encryptCanvaTokens(refreshed.tokens)
-  if ('error' in encrypted) return { error: encrypted.error, status: 500 }
-
-  const { error: updateError } = await refreshWorkspaceOAuthConnection(workspaceId, 'canva', {
-    encrypted_access_token: encrypted.encrypted_access_token,
-    access_token_iv: encrypted.access_token_iv,
-    access_token_auth_tag: encrypted.access_token_auth_tag,
-    // Canva may or may not rotate the refresh token on refresh — keep the
-    // existing one encrypted-as-is if a new one wasn't issued.
-    encrypted_refresh_token: encrypted.encrypted_refresh_token ?? connection.encrypted_refresh_token,
-    refresh_token_iv: encrypted.refresh_token_iv ?? connection.refresh_token_iv,
-    refresh_token_auth_tag: encrypted.refresh_token_auth_tag ?? connection.refresh_token_auth_tag,
-    expires_at: expiresAtFromExpiresIn(refreshed.tokens.expires_in),
-  })
-  if (updateError) return { error: `Refreshed token but failed to persist it: ${updateError}`, status: 500 }
-
-  return { token: refreshed.tokens.access_token }
-}
-
-// ─── Route handler ────────────────────────────────────────────────────────────
+// 'canva' is redirected too, not handled inline: its fallback path
+// (lib/canva-export.ts) statically imports renderArtifactToPDF, so it
+// needs Chromium under the hood just like pdf/png do. Handling it inline
+// here would pull Chromium into this shim's bundle for every request,
+// including plain html/json ones — the exact bloat this split exists to
+// avoid. See app/api/artifact/export/canva/route.ts.
+const REDIRECT_FORMATS = new Set(['pdf', 'pptx', 'png', 'canva'])
 
 export async function POST(req: NextRequest) {
-  const { workspaceId, unauthorized } = await requireUser()
-  if (unauthorized) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  let body: { format?: string; artifact?: unknown }
+  // Format-only peek so pdf/pptx/png can be redirected before we do the
+  // full parse (which the target route will do again anyway).
+  let rawFormat: unknown
   try {
-    body = await req.json()
+    rawFormat = (await req.clone().json())?.format
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { format = 'json', artifact } = body
-
-  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
-    return NextResponse.json(
-      { error: 'Missing or invalid artifact. Must be a carousel, deck, report, or newsletter object.' },
-      { status: 400 }
-    )
+  if (typeof rawFormat === 'string' && REDIRECT_FORMATS.has(rawFormat)) {
+    return NextResponse.redirect(new URL(`/api/artifact/export/${rawFormat}`, req.url), 308)
   }
 
-  const bp = artifact as Record<string, unknown>
-  const artifactType = bp.artifact_type
+  const parsed = await parseExportRequest(req)
+  if (!parsed.ok) return parsed.response
+  const { artifactType, bp, safeTitle } = parsed.value
 
-  if (!isSupportedArtifactType(artifactType)) {
-    return NextResponse.json(
-      {
-        error: `Missing or unsupported artifact_type: ${JSON.stringify(artifactType)}. ` +
-               `Supported: ${SUPPORTED_ARTIFACT_TYPES.join(', ')}.`,
+  if (rawFormat === 'json' || rawFormat === undefined) {
+    const json = JSON.stringify(bp, null, 2)
+    return new NextResponse(json, {
+      status: 200,
+      headers: {
+        'Content-Type': CONTENT_TYPES.json,
+        'Content-Disposition': `attachment; filename="${safeTitle}.json"`,
+        'Cache-Control': 'no-store',
       },
-      { status: 400 }
-    )
+    })
   }
 
-  const shapeError = validateArtifactShape(artifactType, bp)
-  if (shapeError) {
-    return NextResponse.json({ error: shapeError }, { status: 422 })
-  }
-
-  if (!['html', 'json', 'pdf', 'pptx', 'canva', 'png'].includes(format)) {
-    return NextResponse.json(
-      { error: `Unsupported export format: ${format}. Supported: html, json, pdf, pptx, canva, png` },
-      { status: 400 }
-    )
-  }
-
-  const fmt = format as ExportFormat
-  const safeTitle = safeFilenameStem(bp.title, artifactType)
-
-  try {
-    if (fmt === 'html') {
+  if (rawFormat === 'html') {
+    try {
       const html = await dispatchHtmlExport(bp, artifactType)
       return new NextResponse(html, {
         status: 200,
@@ -239,115 +85,13 @@ export async function POST(req: NextRequest) {
           'Cache-Control': 'no-store',
         },
       })
+    } catch (error) {
+      return exportErrorResponse('html', artifactType, error)
     }
-
-    if (fmt === 'json') {
-      const json = JSON.stringify(bp, null, 2)
-      return new NextResponse(json, {
-        status: 200,
-        headers: {
-          'Content-Type': CONTENT_TYPES.json,
-          'Content-Disposition': `attachment; filename="${safeTitle}.json"`,
-          'Cache-Control': 'no-store',
-        },
-      })
-    }
-
-    if (fmt === 'pdf') {
-      const { bytes } = await dispatchPdfExport(bp, artifactType)
-      return new NextResponse(new Uint8Array(bytes), {
-        status: 200,
-        headers: {
-          'Content-Type': CONTENT_TYPES.pdf,
-          'Content-Disposition': `attachment; filename="${safeTitle}.pdf"`,
-          'Cache-Control': 'no-store',
-        },
-      })
-    }
-
-    if (fmt === 'pptx') {
-      // Newsletter is an email format — PPTX (slide deck) export is not applicable.
-      // html, json, and pdf are all supported for newsletter exports.
-      if (artifactType === 'newsletter') {
-        return NextResponse.json(
-          { error: 'Newsletter artifacts do not support PPTX export. Use html, pdf, or json instead.' },
-          { status: 400 }
-        )
-      }
-      const { bytes } = await dispatchPptxExport(bp, artifactType as SupportedPptxArtifactType)
-      return new NextResponse(new Uint8Array(bytes), {
-        status: 200,
-        headers: {
-          'Content-Type': CONTENT_TYPES.pptx,
-          'Content-Disposition': `attachment; filename="${safeTitle}.pptx"`,
-          'Cache-Control': 'no-store',
-        },
-      })
-    }
-
-    if (fmt === 'png') {
-      // RENDERING V2 PHASE 9: implements the previously-unimplemented 'png'
-      // ExportFormat value (RENDERING_ARCHITECTURE_AUDIT.md Finding M-2).
-      // Carousel only, matching the scope pattern established by Phases 3-8.
-      if (artifactType !== 'carousel') {
-        return NextResponse.json(
-          { error: 'Only carousel artifacts support PNG export in this phase.' },
-          { status: 400 }
-        )
-      }
-      const { images } = await dispatchImageExport(bp, 'carousel')
-      const zip = new JSZip()
-      images.forEach((image, i) => zip.file(`slide-${i + 1}.png`, image))
-      const zipBytes = await zip.generateAsync({ type: 'nodebuffer' })
-      return new NextResponse(new Uint8Array(zipBytes), {
-        status: 200,
-        headers: {
-          'Content-Type': CONTENT_TYPES.png,
-          'Content-Disposition': `attachment; filename="${safeTitle}-images.zip"`,
-          'Cache-Control': 'no-store',
-        },
-      })
-    }
-
-    // fmt === 'canva' — returns a JSON result (design URL), not a file
-    // download.
-    //
-    // RENDERING V2 PHASE 6: the choice between CanvaFieldRenderer (structured
-    // Autofill mapping) and CanvaImportFallback (PDF repackage) is made HERE,
-    // visibly, at the call site — not hidden inside either module (see
-    // RENDERER_CONTRACT.md §5). isCanvaFieldRendererAvailable() is a real,
-    // config-driven check (CANVA_BRAND_TEMPLATE_ID actually set), not a
-    // fabricated capability signal — see lib/canva-field-renderer.ts's header
-    // for why no brand template is configured by default in this codebase.
-    // Field-rendering is also scoped to carousel only, matching Phases 3-5's
-    // scope decision (composeArtifact() only supports carousel/deck/report/
-    // newsletter, and submitAutofillJob() is typed to CarouselArtifact
-    // specifically pending a real product decision on which artifact types
-    // get brand templates first).
-    const tokenResult = await resolveCanvaAccessToken(workspaceId)
-    if ('error' in tokenResult) {
-      return NextResponse.json({ error: tokenResult.error }, { status: tokenResult.status })
-    }
-
-    const useFieldRenderer = artifactType === 'carousel' && isCanvaFieldRendererAvailable()
-    const importResult = useFieldRenderer
-      ? await submitAutofillJob({ accessToken: tokenResult.token, artifact: bp as unknown as CarouselArtifact })
-      : await importArtifactToCanvaFallback({ accessToken: tokenResult.token, artifact: bp, artifactType })
-
-    if (!importResult.ok) {
-      return NextResponse.json({ error: importResult.error ?? 'Canva import failed' }, { status: 502 })
-    }
-
-    return NextResponse.json({
-      designId: importResult.designId,
-      editUrl: importResult.editUrl,
-      viewUrl: importResult.viewUrl,
-    })
-  } catch (error: any) {
-    console.error(`[artifact/export] format=${fmt} artifactType=${artifactType}`, error)
-    return NextResponse.json(
-      { error: error?.message || `Export failed for format=${fmt}` },
-      { status: 500 }
-    )
   }
+
+  return NextResponse.json(
+    { error: `Unsupported export format: ${String(rawFormat)}. Supported: html, json, pdf, pptx, canva, png` },
+    { status: 400 }
+  )
 }
