@@ -33,3 +33,4 @@ _workspaces/
 # Editor / OS noise
 .DS_Store
 *.log
+.vercel
