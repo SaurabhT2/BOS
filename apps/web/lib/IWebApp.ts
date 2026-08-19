@@ -59,7 +59,19 @@ export const ROUTE_INVENTORY: RouteDescriptor[] = [
   { path: '/api/planner',                         methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane' },
 
   // ── Artifact ──────────────────────────────────────────────────────────────
-  { path: '/api/artifact/export',                 methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane' },
+  // FUNCTION-SIZE SPLIT: /api/artifact/export used to be one route for
+  // every format. Bundling Chromium + puppeteer-core + pptxgenjs/jszip
+  // together pushed its deployed function over Vercel's 250MB
+  // uncompressed limit (build succeeded every time; the deployment step
+  // itself failed). Split into one route per format, each with an
+  // isolated function bundle — see lib/artifact-export-request.ts.
+  { path: '/api/artifact/export',                 methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane', notes: 'Legacy dispatcher — handles html/json inline, redirects pdf/pptx/png/canva to the routes below. Prefer calling the specific route directly.' },
+  { path: '/api/artifact/export/html',             methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane' },
+  { path: '/api/artifact/export/json',             methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane' },
+  { path: '/api/artifact/export/pdf',              methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane', notes: 'Bundles @sparticuz/chromium + puppeteer-core.' },
+  { path: '/api/artifact/export/pptx',             methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane', notes: 'Bundles pptxgenjs/jszip.' },
+  { path: '/api/artifact/export/png',              methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane', notes: 'Bundles @sparticuz/chromium + puppeteer-core. Carousel only.' },
+  { path: '/api/artifact/export/canva',            methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane', notes: 'Bundles @sparticuz/chromium + puppeteer-core (fallback path renders a PDF for Canva import).' },
   { path: '/api/export',                          methods: ['POST'],             authRequired: true,  adminRequired: false, runtimeExport: true,  pipelineEntry: 'control-plane', notes: 'Legacy export path — prefer /api/artifact/export' },
 
   // ── Admin ─────────────────────────────────────────────────────────────────
